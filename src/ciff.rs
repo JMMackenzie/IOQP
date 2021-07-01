@@ -1,4 +1,4 @@
-use log::*;
+use tracing::*;
 
 pub mod proto;
 
@@ -23,7 +23,10 @@ pub struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
-    pub fn new<T: 'a + std::io::BufRead>(input: &'a mut T) -> anyhow::Result<Reader<'a>> {
+    #[tracing::instrument]
+    pub fn new<T: 'a + std::io::BufRead + std::fmt::Debug>(
+        input: &'a mut T,
+    ) -> anyhow::Result<Reader<'a>> {
         let mut input = protobuf::CodedInputStream::from_buffered_reader(input);
         let header = input.read_message::<proto::Header>()?;
         Ok(Reader {
@@ -95,15 +98,18 @@ impl<'a> Iterator for Reader<'a> {
     }
 }
 
-
 pub struct Writer<'a> {
     output: protobuf::CodedOutputStream<'a>,
 }
 
 impl<'a> Writer<'a> {
-    pub fn from_reader<T: 'a + std::io::Write>(output: &'a mut T,reader: &Reader<'a>,description: &str) -> Result<Writer<'a>, protobuf::ProtobufError> {
+    pub fn from_reader<T: 'a + std::io::Write>(
+        output: &'a mut T,
+        reader: &Reader<'a>,
+        description: &str,
+    ) -> Result<Writer<'a>, protobuf::ProtobufError> {
         let header = reader.header();
-        let description = format!("{} {}",header.get_description(),description);
+        let description = format!("{} {}", header.get_description(), description);
         Self::new(
             output,
             header.get_num_postings_lists(),
@@ -112,7 +118,7 @@ impl<'a> Writer<'a> {
             header.get_num_docs(),
             header.get_total_docs(),
             header.get_average_doclength(),
-            &description
+            &description,
         )
     }
 

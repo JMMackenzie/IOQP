@@ -8,6 +8,12 @@ build = "build.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-
+anyhow = "1.0.41"
+protobuf = "2.24.1"
+structopt = "0.3.21"
+ tracing = "0.1"
+ tracing-bunyan-formatter = "0.2.4"
+tracing-subscriber = "0.2.19"
+ 
 [build-dependencies]
 protobuf-codegen-pure = "2.14"
