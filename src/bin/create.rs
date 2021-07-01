@@ -8,14 +8,14 @@ use ioqp;
 
 /// Main command line options for the ukko_broker binary
 #[derive(StructOpt, Debug)]
-#[structopt(
-    name = "ukko_broker",
-    about = "broker access to ukko data shards via a http port"
-)]
+#[structopt(name = "create", about = "create ioqp indexes")]
 struct Args {
     /// Path to ciff input file
     #[structopt(short, long, parse(from_os_str))]
     input: std::path::PathBuf,
+    /// Path to ioqp index output file
+    #[structopt(short, long, parse(from_os_str))]
+    output: std::path::PathBuf,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -30,6 +30,13 @@ fn main() -> anyhow::Result<()> {
     info!(args = ?args);
 
     let index = ioqp::Index::from_ciff_file(args.input)?;
+
+    {
+        let _span = span!(Level::INFO, "write index to disk");
+        let output_file = std::fs::File::create(args.output)?;
+        let output_file = std::io::BufWriter::new(output_file);
+        bincode::serialize_into(output_file, &index)?;
+    }
 
     Ok(())
 }
