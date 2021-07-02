@@ -1,9 +1,6 @@
 use structopt::StructOpt;
 use tracing::*;
-use tracing_bunyan_formatter::*;
 use tracing_subscriber::fmt::format::FmtSpan;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::*;
 
 use ioqp;
 
@@ -21,7 +18,7 @@ struct Args {
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_target(false)
-        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+        .with_span_events(FmtSpan::ENTER | FmtSpan::EXIT)
         .with_timer(tracing_subscriber::fmt::time::uptime())
         .with_level(true)
         .init();
