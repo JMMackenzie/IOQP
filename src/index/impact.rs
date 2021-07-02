@@ -21,11 +21,13 @@ pub struct Impact<'list> {
 
 impl<'list> Impact<'list> {
     pub fn from_encoded_slice(mut data_bytes: &mut &'list [u8]) -> Impact<'list> {
+        // (0) read length of complete encoding
+        let total_bytes = data_bytes.read_u32::<LittleEndian>().unwrap();
         // (1) read impact
         let impact = data_bytes.read_u16::<LittleEndian>().unwrap();
         // (2) read num blocks
         let num_blocks = data_bytes.read_u32::<LittleEndian>().unwrap();
-        let total_bytes = data_bytes.read_u32::<LittleEndian>().unwrap();
+        // (3) split of the compressed data
         let (block_bits, data_bytes) = data_bytes.split_at(num_blocks as usize);
         Impact {
             header: Header { impact, block_bits },
@@ -35,12 +37,13 @@ impl<'list> Impact<'list> {
 
     pub fn into_encoded_vec(impact: u16, docs: &[u32]) -> Vec<u8> {
         let mut output = vec![];
+        // (0) write placeholder for length of complete encoding
+        output.write_u32::<LittleEndian>(0).unwrap();
         // (1) write impact
         output.write_u16::<LittleEndian>(impact).unwrap();
         // (2) write num blocks
         let num_blocks: u32 = ((docs.len() + docs.len().rem_euclid(BLOCK_LEN)) / BLOCK_LEN) as u32;
         output.write_u32::<LittleEndian>(num_blocks).unwrap();
-
         // (3) write bpi for each block
         let mut initial: u32 = 0;
         let bitpacker = SimdbpCompressor::new();
@@ -72,6 +75,12 @@ impl<'list> Impact<'list> {
                 output.extend_from_slice(&compressed[..compressed_len]);
             }
         });
+
+        // (5) write length of complete encoding at the start (hacky for now)
+        let mut tmp = vec![];
+        tmp.write_u32::<LittleEndian>(0).unwrap();
+        output[0..4].copy_from_slice(&tmp);
+
         output
     }
 }
