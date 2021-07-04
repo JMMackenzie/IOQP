@@ -26,5 +26,6 @@ fn main() {
                 .expect("Failed to write to generated file");
         }
     }
+
     println!("cargo:rerun-if-changed=build.rs");
 }
