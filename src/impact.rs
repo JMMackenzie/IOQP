@@ -3,9 +3,15 @@ use byteorder::WriteBytesExt;
 
 use bitpacking::BitPacker;
 
+#[cfg(not(target_feature = "avx2"))]
 type SimdbpCompressor = bitpacking::BitPacker4x;
+#[cfg(target_feature = "avx2")]
+type SimdbpCompressor = bitpacking::BitPacker8x;
+
 pub const BLOCK_LEN: usize = SimdbpCompressor::BLOCK_LEN;
 pub const BLOCK_LEN_M1: usize = BLOCK_LEN - 1;
+
+pub const LARGE_BUFFER_FACTOR: usize = 4;
 
 #[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MetaData {
@@ -63,6 +69,32 @@ impl<'index> Impact<'index> {
             },
             output,
         )
+    }
+
+    pub fn next_large_chunk<'buf>(
+        &mut self,
+        output_buf: &'buf mut [u32; LARGE_BUFFER_FACTOR * BLOCK_LEN],
+    ) -> Option<&'buf [u32; LARGE_BUFFER_FACTOR * BLOCK_LEN]> {
+        if self.remaining_u32s >= LARGE_BUFFER_FACTOR * BLOCK_LEN {
+            output_buf
+                .chunks_exact_mut(BLOCK_LEN)
+                .for_each(|out_chunk| {
+                    self.remaining_u32s -= BLOCK_LEN;
+                    let num_bits = unsafe { *self.bytes.get_unchecked(0) };
+                    let compressed_len = num_bits as usize * BLOCK_LEN >> 3;
+                    self.decompressor.decompress_sorted(
+                        self.initial,
+                        unsafe { self.bytes.get_unchecked(1..compressed_len + 1) },
+                        out_chunk,
+                        num_bits,
+                    );
+                    self.bytes = unsafe { self.bytes.get_unchecked(compressed_len + 1..) };
+                    self.initial = unsafe { *out_chunk.get_unchecked(BLOCK_LEN - 1) };
+                });
+            Some(output_buf)
+        } else {
+            None
+        }
     }
 
     pub fn next_chunk<'buf>(

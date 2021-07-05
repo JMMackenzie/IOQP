@@ -31,7 +31,7 @@ fn main() -> anyhow::Result<()> {
     let mut searcher = index.searcher();
 
     let qry = vec!["who", "is", "nicola", "tesla"];
-    searcher.query_rho(&qry, 0.1);
+    searcher.query_rho(&qry, 0.1, 10);
 
     Ok(())
 }

@@ -1,9 +1,10 @@
 #![warn(rust_2018_idioms)]
 
 mod ciff;
-mod impact;
+pub mod impact;
 mod index;
 mod list;
+mod result;
 mod search;
 mod util;
 

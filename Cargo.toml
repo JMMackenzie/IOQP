@@ -14,7 +14,6 @@ bitpacking = "0.8.4"
 byteorder = "1.4.3"
 half = { version = "1.7.1", features = ["serde"] }
 indicatif = { version = "0.16.2", features = ["rayon"] }
-itertools = "0.10.1"
 protobuf = "2.24.1"
 rayon = "1.5.1"
 serde = { version = "1.0.126", features = ["derive"] }
@@ -31,3 +30,9 @@ protobuf-codegen-pure = "2"
 [dev-dependencies]
 quickcheck = "1"
 quickcheck_macros = "1"
+criterion = "0.3"
+rand = "0.8"
+
+[[bench]]
+name = "decode"
+harness = false
