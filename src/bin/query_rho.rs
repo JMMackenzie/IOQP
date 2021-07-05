@@ -74,16 +74,24 @@ fn main() -> anyhow::Result<()> {
     use hdrhistogram::Histogram;
     let mut hist = Histogram::<u64>::new_with_bounds(1, 10 * 1000 * 1000, 2).unwrap();
     let progress = ioqp::util::progress_bar("process_queries", qrys.len());
+    let mut total_took = std::time::Duration::from_micros(0);
     for qry in qrys.iter().progress_with(progress) {
         let result = searcher.query_rho(&qry.tokens, args.rho, 10);
         hist += result.took.as_micros() as u64;
+        total_took += result.took;
         tracing::info!("qid: {}, qry: {:?}, result {}", qry.id, qry.tokens, result);
     }
-
+ 
     println!("# of samples: {}", hist.len());
     println!("  50'th percntl.: {}µs", hist.value_at_quantile(0.50));
     println!("  90'th percntl.: {}µs", hist.value_at_quantile(0.90));
     println!("  99'th percntl.: {}µs", hist.value_at_quantile(0.99));
     println!("99.9'th percntl.: {}µs", hist.value_at_quantile(0.999));
+    println!(
+        "mean time: {}µs",
+        (total_took / qrys.len() as u32).as_micros()
+    );
+
+
     Ok(())
 }
