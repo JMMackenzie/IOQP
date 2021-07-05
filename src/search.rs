@@ -1,8 +1,6 @@
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::BinaryHeap;
 
 use crate::{impact, index::Index, result::*};
-
-const ACCUM_DEFAULT_CAPACITY: usize = 100000;
 
 pub struct Searcher<'index> {
     index: &'index Index,
@@ -81,7 +79,12 @@ impl<'index> Searcher<'index> {
     #[tracing::instrument(skip(self))]
     fn process_impact_groups(&mut self, mut postings_budget: i64) {
         self.accumulators.iter_mut().for_each(|x| *x = 0);
-        let impact_iter = self.impacts.iter_mut().map(|i| i.into_iter()).flatten();
+        let impact_iter = self
+            .impacts
+            .iter_mut()
+            .rev()
+            .map(|i| i.into_iter())
+            .flatten();
         for impact_group in impact_iter {
             if postings_budget < 0 {
                 break;
