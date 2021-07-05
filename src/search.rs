@@ -15,7 +15,7 @@ pub struct Searcher<'index> {
 impl<'index> Searcher<'index> {
     pub fn with_index(index: &'index Index) -> Self {
         Self {
-            impacts: (0..index.levels()).map(|_| Vec::new()).collect(),
+            impacts: (0..=index.max_level()).map(|_| Vec::new()).collect(),
             index,
             accumulators: HashMap::with_capacity(ACCUM_DEFAULT_CAPACITY),
             large_decode_buf: [0; impact::LARGE_BUFFER_FACTOR * impact::BLOCK_LEN],

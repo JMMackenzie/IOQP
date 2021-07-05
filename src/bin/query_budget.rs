@@ -15,6 +15,9 @@ struct Args {
     /// Path to query file
     #[structopt(short, long, parse(from_os_str))]
     queries: std::path::PathBuf,
+    /// Postings budget
+    #[structopt(short, long)]
+    budget: usize,
 }
 
 pub struct Query {
@@ -49,7 +52,7 @@ pub fn read_queries<P: AsRef<std::path::Path> + std::fmt::Debug>(
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_target(false)
-        .with_span_events(FmtSpan::ENTER | FmtSpan::EXIT)
+        .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
         .with_timer(tracing_subscriber::fmt::time::uptime())
         .with_level(true)
         .init();
@@ -62,9 +65,17 @@ fn main() -> anyhow::Result<()> {
     let index = ioqp::Index::read_from_file(args.index)?;
 
     let mut searcher = index.searcher();
+    use hdrhistogram::Histogram;
+    let mut hist = Histogram::<u64>::new_with_bounds(1, 10 * 1000 * 1000, 2).unwrap();
     for qry in qrys {
-        searcher.query_rho(&qry.tokens, 0.1, 10);
+        let result = searcher.query_budget(&qry.tokens, args.budget as i64, 10);
+        hist += result.took.as_micros() as u64;
     }
+    println!("# of samples: {}", hist.len());
+    println!("50'th percentile: {}", hist.value_at_quantile(0.50));
+    println!("90'th percentile: {}", hist.value_at_quantile(0.90));
+    println!("99'th percentile: {}", hist.value_at_quantile(0.99));
+    println!("99.9'th percentile: {}", hist.value_at_quantile(0.999));
 
     Ok(())
 }

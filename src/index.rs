@@ -18,6 +18,7 @@ pub struct Index {
     #[serde(with = "serde_bytes")]
     pub list_data: Vec<u8>,
     num_levels: usize,
+    max_level: usize,
     num_postings: usize,
 }
 
@@ -73,6 +74,7 @@ impl Index {
             vocab,
             list_data,
             num_levels: uniq_levels.len(),
+            max_level: uniq_levels.into_iter().max().unwrap() as usize,
             num_postings,
         })
     }
@@ -108,6 +110,10 @@ impl Index {
 
     pub fn levels(&self) -> usize {
         self.num_levels
+    }
+
+    pub fn max_level(&self) -> usize {
+        self.max_level
     }
 
     pub fn searcher(&self) -> search::Searcher<'_> {
