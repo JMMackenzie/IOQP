@@ -24,7 +24,12 @@ impl<'index> Searcher<'index> {
     }
 
     #[tracing::instrument(skip(self))]
-    pub fn query_rho(&mut self, tokens: &[&str], rho: f32, k: usize) -> SearchResults {
+    pub fn query_rho<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
+        &mut self,
+        tokens: &[S],
+        rho: f32,
+        k: usize,
+    ) -> SearchResults {
         let start = std::time::Instant::now();
         let total_postings = self.determine_impact_groups(tokens);
         let postings_budget = (total_postings as f32 * rho).ceil() as i64;
@@ -37,12 +42,15 @@ impl<'index> Searcher<'index> {
     }
 
     #[tracing::instrument(skip(self))]
-    fn determine_impact_groups(&mut self, tokens: &[&str]) -> usize {
+    fn determine_impact_groups<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
+        &mut self,
+        tokens: &[S],
+    ) -> usize {
         // determine what to decompress
         self.impacts.iter_mut().for_each(|i| i.clear());
         tokens
             .into_iter()
-            .filter_map(|tok| match self.index.impact_list(tok) {
+            .filter_map(|tok| match self.index.impact_list(tok.as_ref()) {
                 Some(list) => {
                     let mut start = list.start_byte_offset;
                     Some(
@@ -114,9 +122,9 @@ impl<'index> Searcher<'index> {
     }
 
     #[tracing::instrument(skip(self))]
-    pub fn query_budget(
+    pub fn query_budget<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
         &mut self,
-        tokens: &[&str],
+        tokens: &[S],
         postings_budget: i64,
         k: usize,
     ) -> SearchResults {
