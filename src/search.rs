@@ -1,13 +1,13 @@
 use std::collections::BinaryHeap;
 
-use crate::{impact, index::Index, result::*};
+use crate::{impact, index::Index, result::*, score_type};
 
 pub struct Searcher<'index> {
     index: &'index Index,
     impacts: Vec<Vec<impact::Impact<'index>>>,
     large_decode_buf: [u32; impact::LARGE_BUFFER_FACTOR * impact::BLOCK_LEN],
     decode_buf: [u32; impact::BLOCK_LEN],
-    accumulators: Vec<u16>,
+    accumulators: Vec<score_type>,
 }
 
 impl<'index> Searcher<'index> {
@@ -21,7 +21,7 @@ impl<'index> Searcher<'index> {
         }
     }
 
-    #[tracing::instrument(skip(self))]
+    //#[tracing::instrument(skip(self))]
     pub fn query_rho<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
         &mut self,
         tokens: &[S],
@@ -39,7 +39,7 @@ impl<'index> Searcher<'index> {
         }
     }
 
-    #[tracing::instrument(skip(self))]
+    //#[tracing::instrument(skip(self))]
     fn determine_impact_groups<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
         &mut self,
         tokens: &[S],
@@ -76,7 +76,7 @@ impl<'index> Searcher<'index> {
             .sum::<u32>() as usize
     }
 
-    #[tracing::instrument(skip(self))]
+    //#[tracing::instrument(skip(self))]
     fn process_impact_groups(&mut self, mut postings_budget: i64) {
         self.accumulators.iter_mut().for_each(|x| *x = 0);
         let impact_iter = self
@@ -93,14 +93,14 @@ impl<'index> Searcher<'index> {
             let impact = impact_group.meta_data.impact;
             while let Some(chunk) = impact_group.next_large_chunk(&mut self.large_decode_buf) {
                 for doc_id in chunk {
-                    self.accumulators[*doc_id as usize] += impact;
+                    self.accumulators[*doc_id as usize] += impact as score_type;
                     // let entry = self.accumulators.entry(*doc_id).or_insert(0);
                     // *entry += impact;
                 }
             }
             while let Some(chunk) = impact_group.next_chunk(&mut self.decode_buf) {
                 for doc_id in chunk {
-                    self.accumulators[*doc_id as usize] += impact;
+                    self.accumulators[*doc_id as usize] += impact as score_type;
                     // let entry = self.accumulators.entry(*doc_id).or_insert(0);
                     // *entry += impact;
                 }
@@ -109,33 +109,74 @@ impl<'index> Searcher<'index> {
         }
     }
 
-    #[tracing::instrument(skip(self))]
+    //#[tracing::instrument(skip(self))]
     fn determine_topk(&mut self, k: usize) -> Vec<SearchResult> {
-        let mut heap = BinaryHeap::with_capacity(k);
-        self.accumulators
+        let mut heap = BinaryHeap::with_capacity(k + 1);
+        self.accumulators[..k]
+            .iter()
+            .enumerate()
+            .for_each(|(doc_id, score)| {
+                heap.push(SearchResult {
+                    doc_id: doc_id as u32,
+                    score: *score,
+                });
+            });
+
+        self.accumulators[k..]
             .iter()
             .enumerate()
             .for_each(|(doc_id, &score)| {
-                if heap.len() < k {
+                let top = heap.peek().unwrap();
+                if top.score < score {
                     heap.push(SearchResult {
                         doc_id: doc_id as u32,
                         score,
                     });
-                } else {
-                    let top = heap.peek().unwrap();
-                    if top.score < score {
-                        heap.push(SearchResult {
-                            doc_id: doc_id as u32,
-                            score,
-                        });
-                        heap.pop();
-                    }
+                    heap.pop();
                 }
             });
         heap.into_sorted_vec()
     }
 
-    #[tracing::instrument(skip(self))]
+    //#[tracing::instrument(skip(self))]
+    fn determine_topk_chunks(&mut self, k: usize) -> Vec<SearchResult> {
+        let mut heap = BinaryHeap::with_capacity(k + 1);
+        self.accumulators[..k]
+            .iter()
+            .enumerate()
+            .for_each(|(doc_id, score)| {
+                heap.push(SearchResult {
+                    doc_id: doc_id as u32,
+                    score: *score,
+                });
+            });
+
+        const CHUNK_SIZE: u32 = 2048;
+
+        let mut doc_id = 0;
+        self.accumulators[k..]
+            .chunks(CHUNK_SIZE as usize)
+            .for_each(|scores| {
+                let threshold = heap.peek().unwrap().score;
+                //let max = scores.iter().max().unwrap();
+                let max_or_thres = crate::util::determine_max(scores, threshold);
+                if max_or_thres > threshold {
+                    scores.iter().for_each(|&score| {
+                        let top = heap.peek().unwrap();
+                        if top.score < score {
+                            heap.push(SearchResult { doc_id, score });
+                            heap.pop();
+                        }
+                        doc_id += 1;
+                    });
+                } else {
+                    doc_id += CHUNK_SIZE;
+                }
+            });
+        heap.into_sorted_vec()
+    }
+
+    //#[tracing::instrument(skip(self))]
     pub fn query_budget<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
         &mut self,
         tokens: &[S],
@@ -145,7 +186,7 @@ impl<'index> Searcher<'index> {
         let start = std::time::Instant::now();
         self.determine_impact_groups(tokens);
         self.process_impact_groups(postings_budget);
-        let topk = self.determine_topk(k);
+        let topk = self.determine_topk_chunks(k);
         SearchResults {
             topk,
             took: start.elapsed(),

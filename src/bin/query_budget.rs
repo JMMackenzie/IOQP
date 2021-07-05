@@ -51,17 +51,17 @@ pub fn read_queries<P: AsRef<std::path::Path> + std::fmt::Debug>(
 }
 
 fn main() -> anyhow::Result<()> {
-    let file_appender = tracing_appender::rolling::hourly("./", "query_budget.log");
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-    tracing_subscriber::fmt()
-        .with_target(false)
-        .with_writer(non_blocking)
-        .with_ansi(false)
-        .with_max_level(tracing::Level::WARN)
-        .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
-        .with_timer(tracing_subscriber::fmt::time::uptime())
-        .with_level(true)
-        .init();
+    // let file_appender = tracing_appender::rolling::hourly("./", "query_budget.log");
+    // let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+    // tracing_subscriber::fmt()
+    //     .with_target(false)
+    //     .with_writer(non_blocking)
+    //     .with_ansi(false)
+    //     .with_max_level(tracing::Level::WARN)
+    //     .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
+    //     .with_timer(tracing_subscriber::fmt::time::uptime())
+    //     .with_level(true)
+    //     .init();
 
     let args = Args::from_args();
     info!(args = ?args);
@@ -74,16 +74,22 @@ fn main() -> anyhow::Result<()> {
     use hdrhistogram::Histogram;
     let mut hist = Histogram::<u64>::new_with_bounds(1, 10 * 1000 * 1000, 2).unwrap();
     let progress = ioqp::util::progress_bar("process_queries", qrys.len());
+    let mut total_took = std::time::Duration::from_micros(0);
     for qry in qrys.iter().progress_with(progress) {
         let result = searcher.query_budget(&qry.tokens, args.budget as i64, 10);
         hist += result.took.as_micros() as u64;
-        tracing::info!("qid: {}, qry: {:?}, result {}", qry.id, qry.tokens, result);
+        total_took += result.took;
+        //tracing::info!("qid: {}, qry: {:?}, result {}", qry.id, qry.tokens, result);
     }
     println!("# of samples: {}", hist.len());
     println!("  50'th percntl.: {}µs", hist.value_at_quantile(0.50));
     println!("  90'th percntl.: {}µs", hist.value_at_quantile(0.90));
     println!("  99'th percntl.: {}µs", hist.value_at_quantile(0.99));
     println!("99.9'th percntl.: {}µs", hist.value_at_quantile(0.999));
+    println!(
+        "mean time: {}µs",
+        (total_took / qrys.len() as u32).as_micros()
+    );
 
     Ok(())
 }
