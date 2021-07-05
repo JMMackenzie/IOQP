@@ -72,10 +72,10 @@ fn main() -> anyhow::Result<()> {
         hist += result.took.as_micros() as u64;
     }
     println!("# of samples: {}", hist.len());
-    println!("50'th percentile: {}", hist.value_at_quantile(0.50));
-    println!("90'th percentile: {}", hist.value_at_quantile(0.90));
-    println!("99'th percentile: {}", hist.value_at_quantile(0.99));
-    println!("99.9'th percentile: {}", hist.value_at_quantile(0.999));
+    println!("  50'th percntl.: {}µs", hist.value_at_quantile(0.50));
+    println!("  90'th percntl.: {}µs", hist.value_at_quantile(0.90));
+    println!("  99'th percntl.: {}µs", hist.value_at_quantile(0.99));
+    println!("99.9'th percntl.: {}µs", hist.value_at_quantile(0.999));
 
     Ok(())
 }
