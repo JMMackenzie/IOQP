@@ -51,11 +51,8 @@ pub fn read_queries<P: AsRef<std::path::Path> + std::fmt::Debug>(
 }
 
 fn main() -> anyhow::Result<()> {
-    let file_appender = tracing_appender::rolling::hourly("./", "query.log");
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
     tracing_subscriber::fmt()
         .with_target(false)
-        .with_writer(non_blocking)
         .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
         .with_timer(tracing_subscriber::fmt::time::uptime())
         .with_level(true)
