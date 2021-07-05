@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 #[derive(Eq)]
 pub struct SearchResult {
     pub doc_id: u32,
-    pub score: crate::score_type,
+    pub score: crate::ScoreType,
 }
 
 impl Ord for SearchResult {

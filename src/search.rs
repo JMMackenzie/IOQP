@@ -1,13 +1,13 @@
 use std::collections::BinaryHeap;
 
-use crate::{impact, index::Index, result::*, score_type};
+use crate::{impact, index::Index, result::*, ScoreType};
 
 pub struct Searcher<'index> {
     index: &'index Index,
     impacts: Vec<Vec<impact::Impact<'index>>>,
     large_decode_buf: [u32; impact::LARGE_BUFFER_FACTOR * impact::BLOCK_LEN],
     decode_buf: [u32; impact::BLOCK_LEN],
-    accumulators: Vec<score_type>,
+    accumulators: Vec<ScoreType>,
 }
 
 impl<'index> Searcher<'index> {
@@ -93,14 +93,14 @@ impl<'index> Searcher<'index> {
             let impact = impact_group.meta_data.impact;
             while let Some(chunk) = impact_group.next_large_chunk(&mut self.large_decode_buf) {
                 for doc_id in chunk {
-                    self.accumulators[*doc_id as usize] += impact as score_type;
+                    self.accumulators[*doc_id as usize] += impact as ScoreType;
                     // let entry = self.accumulators.entry(*doc_id).or_insert(0);
                     // *entry += impact;
                 }
             }
             while let Some(chunk) = impact_group.next_chunk(&mut self.decode_buf) {
                 for doc_id in chunk {
-                    self.accumulators[*doc_id as usize] += impact as score_type;
+                    self.accumulators[*doc_id as usize] += impact as ScoreType;
                     // let entry = self.accumulators.entry(*doc_id).or_insert(0);
                     // *entry += impact;
                 }
@@ -159,7 +159,7 @@ impl<'index> Searcher<'index> {
             .for_each(|scores| {
                 let threshold = heap.peek().unwrap().score;
                 //let max = scores.iter().max().unwrap();
-                let max_or_thres = crate::util::determine_max(scores, threshold);
+                let max_or_thres = unsafe { crate::util::determine_max(scores, threshold) };
                 if max_or_thres > threshold {
                     scores.iter().for_each(|&score| {
                         let top = heap.peek().unwrap();

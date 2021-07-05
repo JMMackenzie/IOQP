@@ -10,4 +10,4 @@ pub mod util;
 
 pub use index::Index;
 
-type score_type = i16;
+type ScoreType = i16;

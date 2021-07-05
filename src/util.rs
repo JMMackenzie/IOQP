@@ -6,6 +6,24 @@ pub fn progress_bar(name: &str, limit: usize) -> indicatif::ProgressBar {
     pb
 }
 
+#[target_feature(enable = "avx2")]
+pub unsafe fn determine_max(scores: &[i16], threshold: i16) -> i16 {
+    use std::arch::x86_64::*;
+    union SimdToArray {
+        array: [i16; 16],
+        simd: __m256i,
+    }
+    let mut threshold = SimdToArray {
+        simd: _mm256_set1_epi16(threshold),
+    };
+    scores.chunks_exact(16).for_each(|chunk| {
+        let data_chunk = _mm256_loadu_epi16(&chunk[0]);
+        threshold.simd = _mm256_max_epi16(data_chunk, threshold.simd);
+    });
+    *threshold.array.iter().max().unwrap()
+}
+
+#[cfg(not(target_feature = "avx2"))]
 pub fn determine_max(scores: &[i16], threshold: i16) -> i16 {
     unsafe {
         use std::arch::x86_64::*;
