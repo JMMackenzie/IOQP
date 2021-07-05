@@ -9,7 +9,7 @@ pub struct Searcher<'index> {
     impacts: Vec<Vec<impact::Impact<'index>>>,
     large_decode_buf: [u32; impact::LARGE_BUFFER_FACTOR * impact::BLOCK_LEN],
     decode_buf: [u32; impact::BLOCK_LEN],
-    accumulators: HashMap<u32, u16>,
+    accumulators: Vec<u16>,
 }
 
 impl<'index> Searcher<'index> {
@@ -17,7 +17,7 @@ impl<'index> Searcher<'index> {
         Self {
             impacts: (0..=index.max_level()).map(|_| Vec::new()).collect(),
             index,
-            accumulators: HashMap::with_capacity(ACCUM_DEFAULT_CAPACITY),
+            accumulators: vec![0; index.max_doc_id() + 1],
             large_decode_buf: [0; impact::LARGE_BUFFER_FACTOR * impact::BLOCK_LEN],
             decode_buf: [0; impact::BLOCK_LEN],
         }
@@ -80,7 +80,7 @@ impl<'index> Searcher<'index> {
 
     #[tracing::instrument(skip(self))]
     fn process_impact_groups(&mut self, mut postings_budget: i64) {
-        self.accumulators.clear();
+        self.accumulators.iter_mut().for_each(|x| *x = 0);
         let impact_iter = self.impacts.iter_mut().map(|i| i.into_iter()).flatten();
         for impact_group in impact_iter {
             if postings_budget < 0 {
@@ -90,14 +90,16 @@ impl<'index> Searcher<'index> {
             let impact = impact_group.meta_data.impact;
             while let Some(chunk) = impact_group.next_large_chunk(&mut self.large_decode_buf) {
                 for doc_id in chunk {
-                    let entry = self.accumulators.entry(*doc_id).or_insert(0);
-                    *entry += impact;
+                    self.accumulators[*doc_id as usize] += impact;
+                    // let entry = self.accumulators.entry(*doc_id).or_insert(0);
+                    // *entry += impact;
                 }
             }
             while let Some(chunk) = impact_group.next_chunk(&mut self.decode_buf) {
                 for doc_id in chunk {
-                    let entry = self.accumulators.entry(*doc_id).or_insert(0);
-                    *entry += impact;
+                    self.accumulators[*doc_id as usize] += impact;
+                    // let entry = self.accumulators.entry(*doc_id).or_insert(0);
+                    // *entry += impact;
                 }
             }
             postings_budget -= num_postings;
@@ -107,17 +109,26 @@ impl<'index> Searcher<'index> {
     #[tracing::instrument(skip(self))]
     fn determine_topk(&mut self, k: usize) -> Vec<SearchResult> {
         let mut heap = BinaryHeap::with_capacity(k);
-        self.accumulators.iter().for_each(|(&doc_id, &score)| {
-            if heap.len() < k {
-                heap.push(SearchResult { doc_id, score });
-            } else {
-                let top = heap.peek().unwrap();
-                if top.score < score {
-                    heap.push(SearchResult { doc_id, score });
-                    heap.pop();
+        self.accumulators
+            .iter()
+            .enumerate()
+            .for_each(|(doc_id, &score)| {
+                if heap.len() < k {
+                    heap.push(SearchResult {
+                        doc_id: doc_id as u32,
+                        score,
+                    });
+                } else {
+                    let top = heap.peek().unwrap();
+                    if top.score < score {
+                        heap.push(SearchResult {
+                            doc_id: doc_id as u32,
+                            score,
+                        });
+                        heap.pop();
+                    }
                 }
-            }
-        });
+            });
         heap.into_sorted_vec()
     }
 

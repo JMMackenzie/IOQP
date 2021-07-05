@@ -6,6 +6,6 @@ mod index;
 mod list;
 mod result;
 mod search;
-mod util;
+pub mod util;
 
 pub use index::Index;
