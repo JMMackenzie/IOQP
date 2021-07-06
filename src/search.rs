@@ -67,7 +67,7 @@ impl<'index> Searcher<'index> {
                     )
                 }
                 None => {
-                    println!("unknown query token '{}'", tok);
+                    //println!("unknown query token '{}'", tok);
                     None
                 }
             })
