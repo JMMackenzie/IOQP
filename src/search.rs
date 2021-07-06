@@ -21,7 +21,6 @@ impl<'index> Searcher<'index> {
         }
     }
 
-    //#[tracing::instrument(skip(self))]
     pub fn query_rho<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
         &mut self,
         tokens: &[S],
@@ -39,7 +38,6 @@ impl<'index> Searcher<'index> {
         }
     }
 
-    //#[tracing::instrument(skip(self))]
     fn determine_impact_groups<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
         &mut self,
         tokens: &[S],
@@ -69,14 +67,13 @@ impl<'index> Searcher<'index> {
                     )
                 }
                 None => {
-                    tracing::warn!("unknown query token '{}'", tok);
+                    println!("unknown query token '{}'", tok);
                     None
                 }
             })
             .sum::<u32>() as usize
     }
 
-    #[tracing::instrument(skip(self))]
     fn process_impact_groups(&mut self, mut postings_budget: i64) {
         self.accumulators.iter_mut().for_each(|x| *x = 0);
         let impact_iter = self
@@ -109,7 +106,6 @@ impl<'index> Searcher<'index> {
         }
     }
 
-    //#[tracing::instrument(skip(self))]
     fn determine_topk(&mut self, k: usize) -> Vec<SearchResult> {
         let mut heap = BinaryHeap::with_capacity(k + 1);
         self.accumulators[..k]
@@ -138,7 +134,6 @@ impl<'index> Searcher<'index> {
         heap.into_sorted_vec()
     }
 
-    //#[tracing::instrument(skip(self))]
     fn determine_topk_chunks(&mut self, k: usize) -> Vec<SearchResult> {
         let mut heap = BinaryHeap::with_capacity(k + 1);
         self.accumulators[..k]
@@ -176,7 +171,6 @@ impl<'index> Searcher<'index> {
         heap.into_sorted_vec()
     }
 
-    //#[tracing::instrument(skip(self))]
     pub fn query_budget<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
         &mut self,
         tokens: &[S],

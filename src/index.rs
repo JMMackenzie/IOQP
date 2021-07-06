@@ -25,7 +25,6 @@ pub struct Index {
 }
 
 impl Index {
-    #[tracing::instrument]
     pub fn from_ciff_file<P: AsRef<std::path::Path> + std::fmt::Debug>(
         input_file_name: P,
     ) -> anyhow::Result<Self> {
@@ -87,7 +86,6 @@ impl Index {
         })
     }
 
-    #[tracing::instrument(skip(self))]
     pub fn write_to_file<P: AsRef<std::path::Path> + std::fmt::Debug>(
         &self,
         output_file_name: P,
@@ -98,7 +96,6 @@ impl Index {
         Ok(())
     }
 
-    #[tracing::instrument]
     pub fn read_from_file<P: AsRef<std::path::Path> + std::fmt::Debug>(
         index_file_name: P,
     ) -> anyhow::Result<Self> {

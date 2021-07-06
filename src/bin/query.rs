@@ -2,10 +2,16 @@ use std::io::BufRead;
 
 use indicatif::ProgressIterator;
 use structopt::StructOpt;
-use tracing::*;
-use tracing_subscriber::fmt::format::FmtSpan;
 
 use ioqp;
+
+#[derive(Debug, parse_display::Display, parse_display::FromStr)]
+#[display("{}-{0}")]
+#[display(style = "snake_case")]
+enum QueryMode {
+    Rho(f32),
+    Budget(u64),
+}
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "query", about = "query ioqp indexes")]
@@ -16,9 +22,12 @@ struct Args {
     /// Path to query file
     #[structopt(short, long, parse(from_os_str))]
     queries: std::path::PathBuf,
-    /// Postings budget
+    /// Query mode
     #[structopt(short, long)]
-    budget: usize,
+    mode: QueryMode,
+    /// Top-k depth
+    #[structopt(short, long, default_value = "10")]
+    k: std::num::NonZeroUsize,
 }
 
 pub struct Query {
@@ -36,7 +45,6 @@ impl std::str::FromStr for Query {
     }
 }
 
-#[tracing::instrument]
 pub fn read_queries<P: AsRef<std::path::Path> + std::fmt::Debug>(
     qry_file: P,
 ) -> anyhow::Result<Vec<Query>> {
@@ -51,20 +59,7 @@ pub fn read_queries<P: AsRef<std::path::Path> + std::fmt::Debug>(
 }
 
 fn main() -> anyhow::Result<()> {
-    let file_appender = tracing_appender::rolling::hourly("./", "query_budget.log");
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-    tracing_subscriber::fmt()
-        .with_target(false)
-        .with_writer(non_blocking)
-        .with_ansi(false)
-        .with_max_level(tracing::Level::WARN)
-        .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
-        .with_timer(tracing_subscriber::fmt::time::uptime())
-        .with_level(true)
-        .init();
-
     let args = Args::from_args();
-    info!(args = ?args);
 
     let qrys = read_queries(args.queries)?;
 
@@ -74,22 +69,27 @@ fn main() -> anyhow::Result<()> {
     use hdrhistogram::Histogram;
     let mut hist = Histogram::<u64>::new_with_bounds(1, 10 * 1000 * 1000, 2).unwrap();
     let progress = ioqp::util::progress_bar("process_queries", qrys.len());
-    let mut total_took = std::time::Duration::from_micros(0);
-    for qry in qrys.iter().progress_with(progress) {
-        let result = searcher.query_budget(&qry.tokens, args.budget as i64, 10);
-        hist += result.took.as_micros() as u64;
-        total_took += result.took;
-        //tracing::info!("qid: {}, qry: {:?}, result {}", qry.id, qry.tokens, result);
+    match args.mode {
+        QueryMode::Rho(rho) => {
+            for qry in qrys.iter().progress_with(progress) {
+                let result = searcher.query_rho(&qry.tokens, rho, usize::from(args.k));
+                hist += result.took.as_micros() as u64;
+            }
+        }
+        QueryMode::Budget(budget) => {
+            for qry in qrys.iter().progress_with(progress) {
+                let result = searcher.query_budget(&qry.tokens, budget as i64, usize::from(args.k));
+                hist += result.took.as_micros() as u64;
+            }
+        }
     }
+
     println!("# of samples: {}", hist.len());
     println!("  50'th percntl.: {}µs", hist.value_at_quantile(0.50));
     println!("  90'th percntl.: {}µs", hist.value_at_quantile(0.90));
     println!("  99'th percntl.: {}µs", hist.value_at_quantile(0.99));
     println!("99.9'th percntl.: {}µs", hist.value_at_quantile(0.999));
-    println!(
-        "mean time: {}µs",
-        (total_took / qrys.len() as u32).as_micros()
-    );
+    println!("mean time: {:.1}µs", hist.mean());
 
     Ok(())
 }

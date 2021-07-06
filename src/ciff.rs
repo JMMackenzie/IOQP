@@ -1,5 +1,3 @@
-use tracing::*;
-
 pub mod proto;
 
 pub enum CiffRecord {
@@ -20,7 +18,6 @@ pub struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
-    #[tracing::instrument]
     pub fn new<T: 'a + std::io::BufRead + std::fmt::Debug>(
         input: &'a mut T,
     ) -> anyhow::Result<Reader<'a>> {
@@ -55,7 +52,7 @@ impl<'a> Iterator for Reader<'a> {
             return match self.input.read_message::<proto::PostingsList>() {
                 Ok(record) => Some(CiffRecord::PostingsList(record)),
                 Err(e) => {
-                    error!("Error parsing CIFF postingslist: {}", e);
+                    println!("Error parsing CIFF postingslist: {}", e);
                     None
                 }
             };
@@ -71,7 +68,7 @@ impl<'a> Iterator for Reader<'a> {
                     })
                 }
                 Err(e) => {
-                    error!("Error parsing CIFF document: {}", e);
+                    println!("Error parsing CIFF document: {}", e);
                     None
                 }
             };
