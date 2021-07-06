@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-// use indicatif::ParallelProgressIterator;
-// use indicatif::ProgressIterator;
+use indicatif::ParallelProgressIterator;
+use indicatif::ProgressIterator;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use std::cmp::Reverse;
@@ -31,13 +31,13 @@ impl Index {
         let ciff_file = std::fs::File::open(input_file_name)?;
         let mut ciff_file = std::io::BufReader::new(ciff_file);
         let mut ciff_reader = ciff::Reader::new(&mut ciff_file)?;
-        //let pb_plist = util::progress_bar("read ciff", ciff_reader.num_postings_lists());
+        let pb_plist = util::progress_bar("read ciff", ciff_reader.num_postings_lists());
         let mut all_postings = Vec::new();
         let mut uniq_levels: HashSet<u16> = HashSet::new();
         let mut num_postings = 0;
         let mut max_doc_id = 0;
         while let Some(ciff::CiffRecord::PostingsList(plist)) = ciff_reader.next() {
-            //pb_plist.inc(1);
+            pb_plist.inc(1);
             let term = plist.get_term().to_string();
             let postings = plist.get_postings();
             let mut posting_map: BTreeMap<Reverse<u16>, Vec<u32>> = BTreeMap::new();
@@ -57,21 +57,20 @@ impl Index {
                 .collect();
             all_postings.push((term, final_postings));
         }
-        //pb_plist.finish_and_clear();
+        pb_plist.finish_and_clear();
 
-        //let pb_encode = util::progress_bar("encode postings", all_postings.len());
+        let pb_encode = util::progress_bar("encode postings", all_postings.len());
         let encoded_data: Vec<(String, (list::List, Vec<u8>))> = all_postings
             .into_par_iter()
-            //.progress_with(pb_encode)
+            .progress_with(pb_encode)
             .map(|(term, input)| (term, list::List::encode(&input)))
             .collect();
 
-        //let pb_write = util::progress_bar("create index", encoded_data.len());
+        let pb_write = util::progress_bar("create index", encoded_data.len());
         let mut vocab = HashMap::new();
         let mut list_data =
             Vec::with_capacity(encoded_data.iter().map(|(_, (_, data))| data.len()).sum());
-        for (term, (mut list, term_data)) in encoded_data.into_iter() {
-            // .progress_with(pb_write) {
+        for (term, (mut list, term_data)) in encoded_data.into_iter().progress_with(pb_write) {
             list.start_byte_offset = list_data.len();
             vocab.insert(term, list);
             list_data.extend_from_slice(&term_data);

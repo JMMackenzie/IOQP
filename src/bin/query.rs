@@ -1,6 +1,6 @@
 use std::io::BufRead;
 
-//use indicatif::ProgressIterator;
+use indicatif::ProgressIterator;
 use structopt::StructOpt;
 
 use ioqp;
@@ -93,20 +93,16 @@ fn main() -> anyhow::Result<()> {
         None => qrys.len(),
     };
     let mut hist = Vec::with_capacity(num_queries);
-    //let progress = ioqp::util::progress_bar("process_queries", num_queries);
+    let pb = ioqp::util::progress_bar("process_queries", num_queries);
     match args.mode {
         QueryMode::Rho(rho) => {
-            for qry in qrys.iter().cycle().take(num_queries)
-            //.progress_with(progress)
-            {
+            for qry in qrys.iter().cycle().take(num_queries).progress_with(pb) {
                 let result = searcher.query_rho(&qry.tokens, rho, usize::from(args.k));
                 hist.push(result.took.as_micros() as u64);
             }
         }
         QueryMode::Budget(budget) => {
-            for qry in qrys.iter().cycle().take(num_queries)
-            //.progress_with(progress)
-            {
+            for qry in qrys.iter().cycle().take(num_queries).progress_with(pb) {
                 let result = searcher.query_budget(&qry.tokens, budget as i64, usize::from(args.k));
                 hist.push(result.took.as_micros() as u64);
             }
