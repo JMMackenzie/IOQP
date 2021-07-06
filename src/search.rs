@@ -76,7 +76,7 @@ impl<'index> Searcher<'index> {
             .sum::<u32>() as usize
     }
 
-    //#[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self))]
     fn process_impact_groups(&mut self, mut postings_budget: i64) {
         self.accumulators.iter_mut().for_each(|x| *x = 0);
         let impact_iter = self
@@ -122,7 +122,7 @@ impl<'index> Searcher<'index> {
                 });
             });
 
-        self.accumulators[k..]
+        self.accumulators
             .iter()
             .enumerate()
             .for_each(|(doc_id, &score)| {
