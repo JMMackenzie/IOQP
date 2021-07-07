@@ -14,7 +14,7 @@ use crate::search;
 use crate::util;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
-pub struct Index {
+pub struct Index<C: crate::compress::Compressor> {
     vocab: HashMap<String, list::List>,
     #[serde(with = "serde_bytes")]
     pub list_data: Vec<u8>,
@@ -22,9 +22,10 @@ pub struct Index {
     max_level: usize,
     max_doc_id: u32,
     num_postings: usize,
+    impact_type: std::marker::PhantomData<C>,
 }
 
-impl Index {
+impl<Compressor: crate::compress::Compressor> Index<Compressor> {
     pub fn from_ciff_file<P: AsRef<std::path::Path> + std::fmt::Debug>(
         input_file_name: P,
     ) -> anyhow::Result<Self> {
@@ -63,7 +64,7 @@ impl Index {
         let encoded_data: Vec<(String, (list::List, Vec<u8>))> = all_postings
             .into_par_iter()
             .progress_with(pb_encode)
-            .map(|(term, input)| (term, list::List::encode(&input)))
+            .map(|(term, input)| (term, list::List::encode::<Compressor>(&input)))
             .collect();
 
         let pb_write = util::progress_bar("create index", encoded_data.len());
@@ -83,6 +84,7 @@ impl Index {
             max_level: uniq_levels.into_iter().max().unwrap() as usize,
             max_doc_id,
             num_postings,
+            impact_type: std::marker::PhantomData,
         })
     }
 
@@ -125,7 +127,7 @@ impl Index {
         self.max_doc_id as usize
     }
 
-    pub fn searcher(&self) -> search::Searcher<'_> {
+    pub fn searcher(&self) -> search::Searcher<'_, Compressor> {
         search::Searcher::with_index(&self)
     }
 }

@@ -7,12 +7,14 @@ pub struct List {
 }
 
 impl List {
-    pub fn encode(input: &[(u16, Vec<u32>)]) -> (List, Vec<u8>) {
+    pub fn encode<Compressor: crate::compress::Compressor>(
+        input: &[(u16, Vec<u32>)],
+    ) -> (List, Vec<u8>) {
         let mut output = vec![];
         let mut impacts = smallvec::SmallVec::new();
         for (meta_data, data) in input
             .into_iter()
-            .map(|(impact, docs)| impact::Impact::encode(*impact, &docs))
+            .map(|(impact, docs)| impact::Impact::encode::<Compressor>(*impact, &docs))
         {
             impacts.push(meta_data);
             output.extend_from_slice(&data);

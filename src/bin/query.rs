@@ -85,7 +85,7 @@ fn main() -> anyhow::Result<()> {
 
     let qrys = read_queries(args.queries)?;
 
-    let index = ioqp::Index::read_from_file(args.index)?;
+    let index = ioqp::Index::<ioqp::SimdBPandStreamVbyte>::read_from_file(args.index)?;
 
     let mut searcher = index.searcher();
     let num_queries = match args.num_queries {

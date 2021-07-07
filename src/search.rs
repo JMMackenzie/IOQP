@@ -1,23 +1,29 @@
 use std::collections::BinaryHeap;
 
-use crate::{impact, index::Index, result::*, ScoreType};
+use crate::{
+    compress::{self},
+    impact,
+    index::Index,
+    result::*,
+    ScoreType,
+};
 
-pub struct Searcher<'index> {
-    index: &'index Index,
+pub struct Searcher<'index, Compressor: crate::compress::Compressor> {
+    index: &'index Index<Compressor>,
     impacts: Vec<Vec<impact::Impact<'index>>>,
-    large_decode_buf: [u32; impact::LARGE_BUFFER_FACTOR * impact::BLOCK_LEN],
-    decode_buf: [u32; impact::BLOCK_LEN],
+    large_decode_buf: compress::LargeBuffer,
+    decode_buf: compress::Buffer,
     accumulators: Vec<ScoreType>,
 }
 
-impl<'index> Searcher<'index> {
-    pub fn with_index(index: &'index Index) -> Self {
+impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compressor> {
+    pub fn with_index(index: &'index Index<Compressor>) -> Self {
         Self {
             impacts: (0..=index.max_level()).map(|_| Vec::new()).collect(),
             index,
             accumulators: vec![0; index.max_doc_id() + 1],
-            large_decode_buf: [0; impact::LARGE_BUFFER_FACTOR * impact::BLOCK_LEN],
-            decode_buf: [0; impact::BLOCK_LEN],
+            large_decode_buf: [0; compress::LARGE_BLOCK_LEN],
+            decode_buf: [0; compress::BLOCK_LEN],
         }
     }
 
@@ -86,16 +92,18 @@ impl<'index> Searcher<'index> {
             if postings_budget < 0 {
                 break;
             }
-            let num_postings = impact_group.meta_data.count as i64;
-            let impact = impact_group.meta_data.impact;
-            while let Some(chunk) = impact_group.next_large_chunk(&mut self.large_decode_buf) {
+            let num_postings = impact_group.count() as i64;
+            let impact = impact_group.impact();
+            while let Some(chunk) =
+                impact_group.next_large_chunk::<Compressor>(&mut self.large_decode_buf)
+            {
                 for doc_id in chunk {
                     self.accumulators[*doc_id as usize] += impact as ScoreType;
                     // let entry = self.accumulators.entry(*doc_id).or_insert(0);
                     // *entry += impact;
                 }
             }
-            while let Some(chunk) = impact_group.next_chunk(&mut self.decode_buf) {
+            while let Some(chunk) = impact_group.next_chunk::<Compressor>(&mut self.decode_buf) {
                 for doc_id in chunk {
                     self.accumulators[*doc_id as usize] += impact as ScoreType;
                     // let entry = self.accumulators.entry(*doc_id).or_insert(0);

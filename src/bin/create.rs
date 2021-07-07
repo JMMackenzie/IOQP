@@ -16,7 +16,7 @@ struct Args {
 fn main() -> anyhow::Result<()> {
     let args = Args::from_args();
 
-    let index = ioqp::Index::from_ciff_file(args.input)?;
+    let index = ioqp::Index::<ioqp::SimdBPandStreamVbyte>::from_ciff_file(args.input)?;
 
     index.write_to_file(args.output)
 }

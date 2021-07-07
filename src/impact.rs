@@ -1,17 +1,4 @@
-use byteorder::ReadBytesExt;
-use byteorder::WriteBytesExt;
-
-use bitpacking::BitPacker;
-
-#[cfg(not(target_feature = "avx2"))]
-type SimdbpCompressor = bitpacking::BitPacker4x;
-#[cfg(target_feature = "avx2")]
-type SimdbpCompressor = bitpacking::BitPacker8x;
-
-pub const BLOCK_LEN: usize = SimdbpCompressor::BLOCK_LEN;
-pub const BLOCK_LEN_M1: usize = BLOCK_LEN - 1;
-
-pub const LARGE_BUFFER_FACTOR: usize = 4;
+use crate::compress;
 
 #[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MetaData {
@@ -25,37 +12,47 @@ pub struct Impact<'index> {
     pub remaining_u32s: usize,
     pub bytes: &'index [u8],
     pub initial: u32,
-    pub decompressor: SimdbpCompressor,
 }
 
 impl<'index> Impact<'index> {
+    pub fn count(&self) -> u32 {
+        self.meta_data.count
+    }
+
+    pub fn impact(&self) -> u16 {
+        self.meta_data.impact
+    }
+
     pub fn from_encoded_slice(meta_data: MetaData, bytes: &'index [u8]) -> Impact<'index> {
         Impact {
             remaining_u32s: meta_data.count as usize,
             meta_data,
             initial: 0,
             bytes,
-            decompressor: SimdbpCompressor::new(),
         }
     }
 
-    pub fn encode(impact: u16, docs: &[u32]) -> (MetaData, Vec<u8>) {
+    pub fn encode<Compressor: crate::compress::Compressor>(
+        impact: u16,
+        docs: &[u32],
+    ) -> (MetaData, Vec<u8>) {
         let mut output = vec![];
         // (3) write bpi for each block and compress
-        let bitpacker = SimdbpCompressor::new();
         let mut initial: u32 = 0;
-        let mut compressed = vec![0u8; 8 * BLOCK_LEN];
-        docs.chunks(BLOCK_LEN).for_each(|chunk| {
+        let mut compressed = vec![0u8; 8 * compress::BLOCK_LEN];
+        docs.chunks(compress::BLOCK_LEN).for_each(|chunk| {
             let compressed_len = match chunk.len() {
                 // full blocks -> SIMDBP
-                BLOCK_LEN => {
-                    let num_block_bits = bitpacker.num_bits_sorted(initial, chunk);
-                    output.write_u8(num_block_bits).unwrap();
-                    bitpacker.compress_sorted(initial, &chunk, &mut compressed[..], num_block_bits)
+                compress::BLOCK_LEN => {
+                    Compressor::compress_sorted_full(initial, &chunk, &mut compressed[..])
+                    // let num_block_bits = bitpacker.num_bits_sorted(initial, chunk);
+                    // output.write_u8(num_block_bits).unwrap();
+                    // bitpacker.compress_sorted(initial, &chunk, &mut compressed[..], num_block_bits)
                 }
                 // non-full block -> streamvbyte
                 _ => {
-                    streamvbyte::encode_delta_to_buf(&chunk, &mut compressed[..], initial).unwrap()
+                    Compressor::compress_sorted(initial, &chunk, &mut compressed[..])
+                    //streamvbyte::encode_delta_to_buf(&chunk, &mut compressed[..], initial).unwrap()
                 }
             };
             output.extend_from_slice(&compressed[..compressed_len]);
@@ -71,25 +68,19 @@ impl<'index> Impact<'index> {
         )
     }
 
-    pub fn next_large_chunk<'buf>(
+    pub fn next_large_chunk<'buf, Compressor: crate::compress::Compressor>(
         &mut self,
-        output_buf: &'buf mut [u32; LARGE_BUFFER_FACTOR * BLOCK_LEN],
-    ) -> Option<&'buf [u32; LARGE_BUFFER_FACTOR * BLOCK_LEN]> {
-        if self.remaining_u32s >= LARGE_BUFFER_FACTOR * BLOCK_LEN {
+        output_buf: &'buf mut compress::LargeBuffer,
+    ) -> Option<&'buf compress::LargeBuffer> {
+        if self.remaining_u32s >= output_buf.len() {
             output_buf
-                .chunks_exact_mut(BLOCK_LEN)
+                .chunks_exact_mut(compress::BLOCK_LEN)
                 .for_each(|out_chunk| {
-                    self.remaining_u32s -= BLOCK_LEN;
-                    let num_bits = unsafe { *self.bytes.get_unchecked(0) };
-                    let compressed_len = num_bits as usize * BLOCK_LEN >> 3;
-                    self.decompressor.decompress_sorted(
-                        self.initial,
-                        unsafe { self.bytes.get_unchecked(1..compressed_len + 1) },
-                        out_chunk,
-                        num_bits,
-                    );
-                    self.bytes = unsafe { self.bytes.get_unchecked(compressed_len + 1..) };
-                    self.initial = unsafe { *out_chunk.get_unchecked(BLOCK_LEN - 1) };
+                    self.remaining_u32s -= compress::BLOCK_LEN;
+                    let compressed_len =
+                        Compressor::decompress_sorted_full(self.initial, &self.bytes, out_chunk);
+                    self.bytes = unsafe { self.bytes.get_unchecked(compressed_len..) };
+                    self.initial = unsafe { *out_chunk.get_unchecked(compress::BLOCK_LEN - 1) };
                 });
             Some(output_buf)
         } else {
@@ -97,37 +88,34 @@ impl<'index> Impact<'index> {
         }
     }
 
-    pub fn next_chunk<'buf>(
+    pub fn next_chunk<'buf, Compressor: crate::compress::Compressor>(
         &mut self,
-        output_buf: &'buf mut [u32; BLOCK_LEN],
+        output_buf: &'buf mut compress::Buffer,
     ) -> Option<&'buf [u32]> {
         // nothing decoded left. decode more
         match self.remaining_u32s {
             0 => return None,
-            1..=BLOCK_LEN_M1 => {
-                let out_buf_start = BLOCK_LEN - self.remaining_u32s;
-                self.remaining_u32s = 0;
-                streamvbyte::decode_delta(
+            1..=compress::BLOCK_LEN_M1 => {
+                let out_buf_start = compress::BLOCK_LEN - self.remaining_u32s;
+                Compressor::decompress_sorted(
+                    self.initial,
                     self.bytes,
                     &mut output_buf[out_buf_start..],
-                    self.initial,
                 );
+                self.remaining_u32s = 0;
                 self.bytes = &self.bytes[self.bytes.len()..];
                 Some(&output_buf[out_buf_start..])
             }
             _ => {
                 // full block
-                self.remaining_u32s -= BLOCK_LEN;
-                let num_bits = self.bytes.read_u8().unwrap();
-                let compressed_len = num_bits as usize * BLOCK_LEN / 8;
-                self.decompressor.decompress_sorted(
+                self.remaining_u32s -= compress::BLOCK_LEN;
+                let compressed_len = Compressor::decompress_sorted_full(
                     self.initial,
-                    &self.bytes[..compressed_len],
+                    &self.bytes,
                     &mut output_buf[..],
-                    num_bits,
                 );
                 self.bytes = &self.bytes[compressed_len..];
-                self.initial = output_buf[BLOCK_LEN - 1];
+                self.initial = output_buf[compress::BLOCK_LEN - 1];
                 Some(&output_buf[..])
             }
         }

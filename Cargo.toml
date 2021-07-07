@@ -20,6 +20,8 @@ serde_bytes = "0.11.5"
 smallvec = { version = "1.6.1", features = ["serde"] }
 streamvbyte = "0.1.1"
 structopt = "0.3.21"
+tracing = "0.1.26"
+tracing-appender = "0.1.2"
  
 [build-dependencies]
 protobuf-codegen-pure = "2"
