@@ -128,14 +128,14 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
                 });
             });
 
-        self.accumulators[k+1..]
+        self.accumulators[k..]
             .iter()
             .enumerate()
             .for_each(|(doc_id, &score)| {
                 let top = heap.peek().unwrap();
                 if top.score < score {
                     heap.push(SearchResult {
-                        doc_id: doc_id as u32,
+                        doc_id: (doc_id + k) as u32,
                         score,
                     });
                     heap.pop();
@@ -169,7 +169,7 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
                     scores.iter().for_each(|&score| {
                         let top = heap.peek().unwrap();
                         if top.score < score {
-                            heap.push(SearchResult { doc_id, score });
+                            heap.push(SearchResult { doc_id: (doc_id + k as u32), score });
                             heap.pop();
                         }
                         doc_id += 1;
@@ -191,8 +191,7 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
         let start = std::time::Instant::now();
         self.determine_impact_segments(tokens);
         self.process_impact_segments(postings_budget);
-        //let topk = self.determine_topk_chunks(k);
-        let topk = self.determine_topk(k);
+        let topk = self.determine_topk_chunks(k);
         SearchResults {
             topk,
             took: start.elapsed(),
