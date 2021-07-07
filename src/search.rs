@@ -27,16 +27,16 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
         }
     }
 
-    pub fn query_rho<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
+    pub fn query_fraction<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
         &mut self,
         tokens: &[S],
         rho: f32,
         k: usize,
     ) -> SearchResults {
         let start = std::time::Instant::now();
-        let total_postings = self.determine_impact_groups(tokens);
+        let total_postings = self.determine_impact_segments(tokens);
         let postings_budget = (total_postings as f32 * rho).ceil() as i64;
-        self.process_impact_groups(postings_budget);
+        self.process_impact_segments(postings_budget);
         let topk = self.determine_topk(k);
         SearchResults {
             topk,
@@ -44,7 +44,7 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
         }
     }
 
-    fn determine_impact_groups<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
+    fn determine_impact_segments<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
         &mut self,
         tokens: &[S],
     ) -> usize {
@@ -80,7 +80,7 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
             .sum::<u32>() as usize
     }
 
-    fn process_impact_groups(&mut self, mut postings_budget: i64) {
+    fn process_impact_segments(&mut self, mut postings_budget: i64) {
         self.accumulators.iter_mut().for_each(|x| *x = 0);
         let impact_iter = self
             .impacts
@@ -179,15 +179,15 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
         heap.into_sorted_vec()
     }
 
-    pub fn query_budget<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
+    pub fn query_fixed<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
         &mut self,
         tokens: &[S],
         postings_budget: i64,
         k: usize,
     ) -> SearchResults {
         let start = std::time::Instant::now();
-        self.determine_impact_groups(tokens);
-        self.process_impact_groups(postings_budget);
+        self.determine_impact_segments(tokens);
+        self.process_impact_segments(postings_budget);
         let topk = self.determine_topk_chunks(k);
         SearchResults {
             topk,
