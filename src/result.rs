@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::cmp::Ordering;
 
 #[derive(Eq)]
@@ -27,11 +28,27 @@ impl PartialEq for SearchResult {
 pub struct SearchResults {
     pub topk: Vec<SearchResult>,
     pub took: std::time::Duration,
+    pub qid: usize,
+}
+
+impl SearchResults {
+
+    pub fn to_trec_file(&self, mut output: &std::fs::File) {
+        for (rank, res) in self.topk.iter().enumerate() {
+            writeln!(output, "{} Q0 {} {} {} ioqp", self.qid, res.doc_id, rank+1, res.score).unwrap();
+        }
+    }
+
+    pub fn _to_tsv_file(&self, mut output: &std::fs::File) {
+        for (rank, res) in self.topk.iter().enumerate() {
+            writeln!(output, "{} {} {}", self.qid, res.doc_id, rank+1).unwrap();
+        }
+    }
 }
 
 impl std::fmt::Display for SearchResults {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "took: {}ms [", self.took.as_millis())?;
+        write!(f, "query {} took: {}ms [", self.qid, self.took.as_millis())?;
         for (rank, res) in self.topk.iter().enumerate() {
             write!(f, "#{},({},{})", rank + 1, res.doc_id, res.score)?;
             if rank + 1 != self.topk.len() {

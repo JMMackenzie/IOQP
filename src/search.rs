@@ -31,6 +31,7 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
         &mut self,
         tokens: &[S],
         rho: f32,
+        query_id: usize,
         k: usize,
     ) -> SearchResults {
         let start = std::time::Instant::now();
@@ -41,6 +42,7 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
         SearchResults {
             topk,
             took: start.elapsed(),
+            qid: query_id,
         }
     }
 
@@ -126,7 +128,7 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
                 });
             });
 
-        self.accumulators
+        self.accumulators[k+1..]
             .iter()
             .enumerate()
             .for_each(|(doc_id, &score)| {
@@ -183,15 +185,18 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
         &mut self,
         tokens: &[S],
         postings_budget: i64,
+        query_id: usize,
         k: usize,
     ) -> SearchResults {
         let start = std::time::Instant::now();
         self.determine_impact_segments(tokens);
         self.process_impact_segments(postings_budget);
-        let topk = self.determine_topk_chunks(k);
+        //let topk = self.determine_topk_chunks(k);
+        let topk = self.determine_topk(k);
         SearchResults {
             topk,
             took: start.elapsed(),
+            qid: query_id,
         }
     }
 }
