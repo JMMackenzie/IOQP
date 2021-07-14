@@ -33,15 +33,15 @@ pub struct SearchResults {
 
 impl SearchResults {
 
-    pub fn to_trec_file(&self, mut output: &std::fs::File) {
+    pub fn to_trec_file(&self, id_map: &Vec<String>, mut output: &std::fs::File) {
         for (rank, res) in self.topk.iter().enumerate() {
-            writeln!(output, "{} Q0 {} {} {} ioqp", self.qid, res.doc_id, rank+1, res.score).unwrap();
+            writeln!(output, "{} Q0 {} {} {} ioqp", self.qid, id_map[res.doc_id as usize], rank+1, res.score).unwrap();
         }
     }
 
-    pub fn _to_tsv_file(&self, mut output: &std::fs::File) {
+    pub fn _to_tsv_file(&self, id_map: &Vec<String>, mut output: &std::fs::File) {
         for (rank, res) in self.topk.iter().enumerate() {
-            writeln!(output, "{} {} {}", self.qid, res.doc_id, rank+1).unwrap();
+            writeln!(output, "{} {} {}", self.qid, id_map[res.doc_id as usize], rank+1).unwrap();
         }
     }
 }

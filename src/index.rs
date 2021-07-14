@@ -15,6 +15,7 @@ use crate::util;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct Index<C: crate::compress::Compressor> {
+    docmap: Vec<String>,
     vocab: HashMap<String, list::List>,
     #[serde(with = "serde_bytes")]
     pub list_data: Vec<u8>,
@@ -37,7 +38,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let mut uniq_levels: HashSet<u16> = HashSet::new();
         let mut num_postings = 0;
         let mut max_doc_id = 0;
-        while let Some(ciff::CiffRecord::PostingsList(plist)) = ciff_reader.next() {
+        while let Some(ciff::CiffRecord::PostingsList(plist)) = ciff_reader.next_postings_list() {
             pb_plist.inc(1);
             let term = plist.get_term().to_string();
             let postings = plist.get_postings();
@@ -77,7 +78,17 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             list_data.extend_from_slice(&term_data);
         }
 
+        let mut docmap = Vec::new();
+        while let Some(ciff::CiffRecord::Document{ external_id, .. } ) = ciff_reader.next_document_record() {
+            docmap.push(external_id);
+        }
+
+        if docmap.len() != (max_doc_id + 1) as usize {
+            anyhow::bail!("Document map length does not match the maximum document identifier. Is your CIFF file corrupt?");
+        }
+
         Ok(Index {
+            docmap,
             vocab,
             list_data,
             num_levels: uniq_levels.len(),
@@ -127,7 +138,12 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         self.max_doc_id as usize
     }
 
+    pub fn docmap(&self) -> &Vec<String> {
+        &self.docmap
+    }
+    
     pub fn searcher(&self) -> search::Searcher<'_, Compressor> {
         search::Searcher::with_index(&self)
     }
+
 }

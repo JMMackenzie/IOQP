@@ -118,6 +118,7 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
 
     fn determine_topk(&mut self, k: usize) -> Vec<SearchResult> {
         let mut heap = BinaryHeap::with_capacity(k + 1);
+        let block_offset = k;
         self.accumulators[..k]
             .iter()
             .enumerate()
@@ -127,7 +128,6 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
                     score: *score,
                 });
             });
-
         self.accumulators[k..]
             .iter()
             .enumerate()
@@ -135,7 +135,7 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
                 let top = heap.peek().unwrap();
                 if top.score < score {
                     heap.push(SearchResult {
-                        doc_id: (doc_id + k) as u32,
+                        doc_id: (doc_id + block_offset) as u32,
                         score,
                     });
                     heap.pop();
@@ -146,6 +146,7 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
 
     fn determine_topk_chunks(&mut self, k: usize) -> Vec<SearchResult> {
         let mut heap = BinaryHeap::with_capacity(k + 1);
+        let block_offset = k;
         self.accumulators[..k]
             .iter()
             .enumerate()
@@ -169,7 +170,7 @@ impl<'index, Compressor: crate::compress::Compressor> Searcher<'index, Compresso
                     scores.iter().for_each(|&score| {
                         let top = heap.peek().unwrap();
                         if top.score < score {
-                            heap.push(SearchResult { doc_id: (doc_id + k as u32), score });
+                            heap.push(SearchResult { doc_id: (doc_id + block_offset as u32), score });
                             heap.pop();
                         }
                         doc_id += 1;

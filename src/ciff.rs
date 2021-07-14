@@ -11,11 +11,12 @@ pub enum CiffRecord {
 
 pub struct Reader<'a> {
     input: protobuf::CodedInputStream<'a>,
-    num_records: usize,
+    _num_records: usize,
     num_postings_lists: usize,
     postings_left: usize,
     docs_left: usize,
 }
+
 
 impl<'a> Reader<'a> {
     pub fn new<T: 'a + std::io::BufRead + std::fmt::Debug>(
@@ -28,21 +29,58 @@ impl<'a> Reader<'a> {
             postings_left: header.get_num_postings_lists() as usize,
             docs_left: header.get_num_docs() as usize,
             num_postings_lists: header.get_num_postings_lists() as usize,
-            num_records: header.get_num_postings_lists() as usize + header.get_num_docs() as usize,
+            _num_records: header.get_num_postings_lists() as usize + header.get_num_docs() as usize,
         })
     }
 
     pub fn num_postings_lists(&self) -> usize {
         self.num_postings_lists
     }
+
+    pub fn next_postings_list(&mut self) -> Option<CiffRecord> {
+        if self.postings_left != 0 {
+            self.postings_left -= 1;
+            return match self.input.read_message::<proto::PostingsList>() {
+                Ok(record) => Some(CiffRecord::PostingsList(record)),
+                Err(e) => {
+                    println!("Error parsing CIFF postingslist: {}", e);
+                    None
+                }
+            };
+        }
+        None
+    }
+
+    pub fn next_document_record(&mut self) -> Option<CiffRecord> {
+        if self.docs_left != 0 {
+            self.docs_left -= 1;
+            return match self.input.read_message::<proto::DocRecord>() {
+                Ok(record) => {
+                    Some(CiffRecord::Document {
+                        doc_id: record.get_docid() as u32, // todo fix this...
+                        external_id: record.get_collection_docid().to_string(),
+                        length: record.get_doclength() as u32, // todo fix this...
+                    })
+                }
+                Err(e) => {
+                    println!("Error parsing CIFF document: {}", e);
+                    None
+                }
+            };
+        }
+        None
+    }
 }
 
+/*
 impl<'a> ExactSizeIterator for Reader<'a> {
     fn len(&self) -> usize {
         self.num_records
     }
 }
+*/
 
+/*
 impl<'a> Iterator for Reader<'a> {
     type Item = CiffRecord;
 
@@ -75,4 +113,5 @@ impl<'a> Iterator for Reader<'a> {
         }
         None
     }
-}
+
+}*/
