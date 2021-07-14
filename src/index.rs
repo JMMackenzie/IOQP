@@ -38,35 +38,49 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let mut uniq_levels: HashSet<u16> = HashSet::new();
         let mut num_postings = 0;
         let mut max_doc_id = 0;
-        while let Some(ciff::CiffRecord::PostingsList(plist)) = ciff_reader.next_postings_list() {
-            pb_plist.inc(1);
-            let term = plist.get_term().to_string();
-            let postings = plist.get_postings();
-            let mut posting_map: BTreeMap<Reverse<u16>, Vec<u32>> = BTreeMap::new();
-            let mut doc_id: u32 = 0;
-            for posting in postings {
-                doc_id += posting.get_docid() as u32;
-                max_doc_id = max_doc_id.max(doc_id);
-                let impact = posting.get_tf() as u16;
-                let entry = posting_map.entry(Reverse(impact)).or_default();
-                entry.push(doc_id);
-                num_postings += 1;
+        let mut docmap = Vec::new();
+
+        // Iterate the CIFF data and build the index
+        loop {
+            match ciff_reader.next() {
+                Some(ciff::CiffRecord::PostingsList(plist)) => {
+                    pb_plist.inc(1);
+                    let term = plist.get_term().to_string();
+                    let postings = plist.get_postings();
+                    let mut posting_map: BTreeMap<Reverse<u16>, Vec<u32>> = BTreeMap::new();
+                    let mut doc_id: u32 = 0;
+                    for posting in postings {
+                        doc_id += posting.get_docid() as u32;
+                        max_doc_id = max_doc_id.max(doc_id);
+                        let impact = posting.get_tf() as u16;
+                        let entry = posting_map.entry(Reverse(impact)).or_default();
+                        entry.push(doc_id);
+                        num_postings += 1;
+                    }
+                    uniq_levels.extend(posting_map.keys().map(|r| r.0));
+                    let final_postings: Vec<(u16, Vec<u32>)> = posting_map
+                        .into_iter()
+                        .map(|(impact, docs)| (impact.0, docs))
+                        .collect();
+                    all_postings.push((term, final_postings));
+                },
+                Some(ciff::CiffRecord::Document{ external_id, .. } ) => {
+                    docmap.push(external_id);
+                },
+                None => break,
             }
-            uniq_levels.extend(posting_map.keys().map(|r| r.0));
-            let final_postings: Vec<(u16, Vec<u32>)> = posting_map
-                .into_iter()
-                .map(|(impact, docs)| (impact.0, docs))
-                .collect();
-            all_postings.push((term, final_postings));
         }
         pb_plist.finish_and_clear();
-
         let pb_encode = util::progress_bar("encode postings", all_postings.len());
         let encoded_data: Vec<(String, (list::List, Vec<u8>))> = all_postings
             .into_par_iter()
             .progress_with(pb_encode)
             .map(|(term, input)| (term, list::List::encode::<Compressor>(&input)))
             .collect();
+
+        if docmap.len() != (max_doc_id + 1) as usize {
+            anyhow::bail!("Document map length does not match the maximum document identifier. Is your CIFF file corrupt?");
+        }
 
         let pb_write = util::progress_bar("create index", encoded_data.len());
         let mut vocab = HashMap::new();
@@ -76,15 +90,6 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             list.start_byte_offset = list_data.len();
             vocab.insert(term, list);
             list_data.extend_from_slice(&term_data);
-        }
-
-        let mut docmap = Vec::new();
-        while let Some(ciff::CiffRecord::Document{ external_id, .. } ) = ciff_reader.next_document_record() {
-            docmap.push(external_id);
-        }
-
-        if docmap.len() != (max_doc_id + 1) as usize {
-            anyhow::bail!("Document map length does not match the maximum document identifier. Is your CIFF file corrupt?");
         }
 
         Ok(Index {
