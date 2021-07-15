@@ -77,14 +77,14 @@ fn main() -> anyhow::Result<()> {
             for qry in qrys.iter().cycle().take(num_queries).progress_with(pb) {
                 let result = searcher.query_fraction(&qry.tokens, rho, qry.id, usize::from(args.k));
                 hist.push(result.took.as_micros() as u64);
-                result.to_trec_file(&out_handle);
+                result.to_trec_file(index.docmap(), &out_handle);
             }
         }
         QueryMode::Fixed(budget) => {
             for qry in qrys.iter().cycle().take(num_queries).progress_with(pb) {
                 let result = searcher.query_fixed(&qry.tokens, budget as i64, qry.id, usize::from(args.k));
                 hist.push(result.took.as_micros() as u64);
-                result.to_trec_file(&out_handle);
+                result.to_trec_file(index.docmap(), &out_handle);
             }
         }
     }
