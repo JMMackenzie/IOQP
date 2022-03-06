@@ -6,7 +6,7 @@ pub fn progress_bar(name: &str, limit: usize) -> indicatif::ProgressBar {
     pb
 }
 
-#[target_feature(enable = "avx2")]
+#[cfg(target_feature = "avx2")]
 pub unsafe fn determine_max(scores: &[i16], threshold: i16) -> i16 {
     use std::arch::x86_64::*;
     union SimdToArray {
@@ -24,23 +24,21 @@ pub unsafe fn determine_max(scores: &[i16], threshold: i16) -> i16 {
 }
 
 #[cfg(not(target_feature = "avx2"))]
-pub fn determine_max(scores: &[i16], threshold: i16) -> i16 {
-    unsafe {
-        use std::arch::x86_64::*;
-        union SimdToArray {
-            array: [i16; 8],
-            simd: __m128i,
-        }
-        let mut threshold = SimdToArray {
-            simd: _mm_set_epi16(
-                threshold, threshold, threshold, threshold, threshold, threshold, threshold,
-                threshold,
-            ),
-        };
-        scores.chunks_exact(8).for_each(|chunk| {
-            let data_chunk = _mm_loadu_epi16(&chunk[0]);
-            threshold.simd = _mm_max_epi16(data_chunk, threshold.simd);
-        });
-        *threshold.array.iter().max().unwrap()
+pub unsafe fn determine_max(scores: &[i16], threshold: i16) -> i16 {
+    use std::arch::x86_64::*;
+    union SimdToArray {
+        array: [i16; 8],
+        simd: __m128i,
     }
+    let mut threshold = SimdToArray {
+        simd: _mm_set_epi16(
+                  threshold, threshold, threshold, threshold, threshold, threshold, threshold,
+                  threshold,
+              ),
+    };
+    scores.chunks_exact(8).for_each(|chunk| {
+        let data_chunk = _mm_loadu_epi16(&chunk[0]);
+        threshold.simd = _mm_max_epi16(data_chunk, threshold.simd);
+    });
+    *threshold.array.iter().max().unwrap()
 }
