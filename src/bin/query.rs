@@ -54,6 +54,12 @@ struct Args {
     /// trec output file
     #[structopt(short, long)]
     output_file: std::path::PathBuf,
+    /// Run warmup round
+    #[structopt(long)]
+    warmup: bool,
+    /// Number of warmup queries
+    #[structopt(long)]
+    warmup_num: Option<usize>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -72,8 +78,22 @@ fn main() -> anyhow::Result<()> {
     };
     let mut hist = Vec::with_capacity(num_queries);
     let pb = ioqp::util::progress_bar("process_queries", num_queries);
+    if args.warmup {
+        let warmup_num = match args.warmup_num {
+            Some(warmup_num) => warmup_num,
+            None => num_queries,
+        };
+        let pb_warmup = ioqp::util::progress_bar("warmup queries", warmup_num);
+        let devnull = std::fs::File::create("/dev/null").expect("can not open /dev/null");
+        for qry in qrys.iter().cycle().take(warmup_num).progress_with(pb_warmup) {
+            // fixed budget postings and `k`
+            let result = searcher.query_fixed(&qry.tokens, 10, qry.id, 10);
+            result.to_trec_file(index.docmap(), &devnull);
+        }
+    }
     match args.mode {
         QueryMode::Fraction(rho) => {
+            pb.reset();
             for qry in qrys.iter().cycle().take(num_queries).progress_with(pb) {
                 let result = searcher.query_fraction(&qry.tokens, rho, qry.id, usize::from(args.k));
                 hist.push(result.took.as_micros() as u64);
@@ -81,6 +101,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
         QueryMode::Fixed(budget) => {
+            pb.reset();
             for qry in qrys.iter().cycle().take(num_queries).progress_with(pb) {
                 let result = searcher.query_fixed(&qry.tokens, budget as i64, qry.id, usize::from(args.k));
                 hist.push(result.took.as_micros() as u64);
