@@ -13,6 +13,7 @@ pub struct Reader<'a> {
     input: protobuf::CodedInputStream<'a>,
     num_records: usize,
     num_postings_lists: usize,
+    avg_doclen: f64,
     postings_left: usize,
     docs_left: usize,
 }
@@ -27,6 +28,7 @@ impl<'a> Reader<'a> {
         Ok(Reader {
             input,
             postings_left: header.get_num_postings_lists() as usize,
+            avg_doclen: header.get_average_doclength() as f64,
             docs_left: header.get_num_docs() as usize,
             num_postings_lists: header.get_num_postings_lists() as usize,
             num_records: header.get_num_postings_lists() as usize + header.get_num_docs() as usize,
@@ -35,6 +37,10 @@ impl<'a> Reader<'a> {
 
     pub fn num_postings_lists(&self) -> usize {
         self.num_postings_lists
+    }
+
+    pub fn average_doclength(&self) -> f64 {
+        self.avg_doclen
     }
 
 }

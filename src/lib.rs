@@ -7,6 +7,7 @@ mod index;
 mod list;
 pub mod query;
 mod result;
+mod score;
 mod search;
 pub mod util;
 
