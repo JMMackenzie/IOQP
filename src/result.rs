@@ -1,7 +1,7 @@
-use std::io::Write;
 use std::cmp::Ordering;
+use std::io::Write;
 
-#[derive(Eq)]
+#[derive(Eq, serde::Serialize, Debug)]
 pub struct SearchResult {
     pub doc_id: u32,
     pub score: crate::ScoreType,
@@ -25,6 +25,7 @@ impl PartialEq for SearchResult {
     }
 }
 
+#[derive(serde::Serialize)]
 pub struct SearchResults {
     pub topk: Vec<SearchResult>,
     pub took: std::time::Duration,
@@ -32,16 +33,30 @@ pub struct SearchResults {
 }
 
 impl SearchResults {
-
-    pub fn to_trec_file(&self, id_map: &Vec<String>, mut output: &std::fs::File) {
+    pub fn to_trec_file(&self, id_map: &[String], mut output: &std::fs::File) {
         for (rank, res) in self.topk.iter().enumerate() {
-            writeln!(output, "{} Q0 {} {} {} ioqp", self.qid, id_map[res.doc_id as usize], rank+1, res.score).unwrap();
+            writeln!(
+                output,
+                "{} Q0 {} {} {} ioqp",
+                self.qid,
+                id_map[res.doc_id as usize],
+                rank + 1,
+                res.score
+            )
+            .unwrap();
         }
     }
 
-    pub fn _to_tsv_file(&self, id_map: &Vec<String>, mut output: &std::fs::File) {
+    pub fn _to_tsv_file(&self, id_map: &[String], mut output: &std::fs::File) {
         for (rank, res) in self.topk.iter().enumerate() {
-            writeln!(output, "{} {} {}", self.qid, id_map[res.doc_id as usize], rank+1).unwrap();
+            writeln!(
+                output,
+                "{} {} {}",
+                self.qid,
+                id_map[res.doc_id as usize],
+                rank + 1
+            )
+            .unwrap();
         }
     }
 }

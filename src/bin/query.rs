@@ -1,6 +1,5 @@
 use indicatif::ProgressIterator;
 use structopt::StructOpt;
-use ioqp;
 
 #[derive(Debug)]
 enum QueryMode {
@@ -18,9 +17,9 @@ impl std::str::FromStr for QueryMode {
         match parts[0] {
             "fraction" => {
                 let rho = parts[1].parse::<f32>()?;
-                if rho >= 0.0 && rho <= 1.0 {
+                if (0.0..=1.0).contains(&rho) {
                     Ok(QueryMode::Fraction(rho))
-                } else{
+                } else {
                     Err(anyhow::anyhow!("Rho must be in range [0.0, 1.0]"))
                 }
             }
@@ -71,7 +70,6 @@ fn main() -> anyhow::Result<()> {
 
     let out_handle = std::fs::File::create(args.output_file).expect("can not open output file");
 
-    let mut searcher = index.searcher();
     let num_queries = match args.num_queries {
         Some(num_queries) => num_queries,
         None => qrys.len(),
@@ -85,9 +83,14 @@ fn main() -> anyhow::Result<()> {
         };
         let pb_warmup = ioqp::util::progress_bar("warmup queries", warmup_num);
         let devnull = std::fs::File::create("/dev/null").expect("can not open /dev/null");
-        for qry in qrys.iter().cycle().take(warmup_num).progress_with(pb_warmup) {
+        for qry in qrys
+            .iter()
+            .cycle()
+            .take(warmup_num)
+            .progress_with(pb_warmup)
+        {
             // fixed budget postings and `k`
-            let result = searcher.query_fixed(&qry.tokens, 10, qry.id, 10);
+            let result = index.query_fixed(&qry.tokens, 10, Some(qry.id), 10);
             result.to_trec_file(index.docmap(), &devnull);
         }
     }
@@ -95,7 +98,8 @@ fn main() -> anyhow::Result<()> {
         QueryMode::Fraction(rho) => {
             pb.reset();
             for qry in qrys.iter().cycle().take(num_queries).progress_with(pb) {
-                let result = searcher.query_fraction(&qry.tokens, rho, qry.id, usize::from(args.k));
+                let result =
+                    index.query_fraction(&qry.tokens, rho, Some(qry.id), usize::from(args.k));
                 hist.push(result.took.as_micros() as u64);
                 result.to_trec_file(index.docmap(), &out_handle);
             }
@@ -103,14 +107,19 @@ fn main() -> anyhow::Result<()> {
         QueryMode::Fixed(budget) => {
             pb.reset();
             for qry in qrys.iter().cycle().take(num_queries).progress_with(pb) {
-                let result = searcher.query_fixed(&qry.tokens, budget as i64, qry.id, usize::from(args.k));
+                let result = index.query_fixed(
+                    &qry.tokens,
+                    budget as i64,
+                    Some(qry.id),
+                    usize::from(args.k),
+                );
                 hist.push(result.took.as_micros() as u64);
                 result.to_trec_file(index.docmap(), &out_handle);
             }
         }
     }
 
-    hist.sort();
+    hist.sort_unstable();
     let n = hist.len() as f32;
     let total_time = hist.iter().sum::<u64>();
     println!("# of samples: {}", hist.len());

@@ -7,6 +7,11 @@ pub fn progress_bar(name: &str, limit: usize) -> indicatif::ProgressBar {
 }
 
 #[cfg(target_feature = "avx2")]
+/// determine max fast
+///
+/// # Safety
+///
+/// this works hopefully
 pub unsafe fn determine_max(scores: &[i16], threshold: i16) -> i16 {
     use std::arch::x86_64::*;
     union SimdToArray {
@@ -24,6 +29,11 @@ pub unsafe fn determine_max(scores: &[i16], threshold: i16) -> i16 {
 }
 
 #[cfg(not(target_feature = "avx2"))]
+/// determine max fast
+///
+/// # Safety
+///
+/// this works hopefully
 pub unsafe fn determine_max(scores: &[i16], threshold: i16) -> i16 {
     use std::arch::x86_64::*;
     union SimdToArray {
@@ -32,9 +42,8 @@ pub unsafe fn determine_max(scores: &[i16], threshold: i16) -> i16 {
     }
     let mut threshold = SimdToArray {
         simd: _mm_set_epi16(
-                  threshold, threshold, threshold, threshold, threshold, threshold, threshold,
-                  threshold,
-              ),
+            threshold, threshold, threshold, threshold, threshold, threshold, threshold, threshold,
+        ),
     };
     scores.chunks_exact(8).for_each(|chunk| {
         let data_chunk = _mm_loadu_epi16(&chunk[0]);
