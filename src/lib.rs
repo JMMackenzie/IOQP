@@ -8,6 +8,7 @@ mod list;
 pub mod query;
 mod range;
 mod result;
+mod score;
 mod search;
 pub mod util;
 
