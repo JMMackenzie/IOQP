@@ -6,6 +6,7 @@ pub mod impact;
 mod index;
 mod list;
 pub mod query;
+mod range;
 mod result;
 mod search;
 pub mod util;
@@ -13,5 +14,7 @@ pub mod util;
 pub use compress::SimdBPandStreamVbyte;
 pub use compress::Uncompressed;
 pub use index::Index;
+pub use range::ByteRange;
+pub use result::SearchResults;
 
 type ScoreType = i16;

@@ -1,4 +1,4 @@
-use crate::compress;
+use crate::{compress, range};
 
 #[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MetaData {
@@ -7,14 +7,15 @@ pub struct MetaData {
     pub bytes: u32,
 }
 
-pub struct Impact<'index> {
+#[derive(Debug)]
+pub struct Impact {
     pub meta_data: MetaData,
     pub remaining_u32s: usize,
-    pub bytes: &'index [u8],
+    pub bytes: range::ByteRange,
     pub initial: u32,
 }
 
-impl<'index> Impact<'index> {
+impl Impact {
     pub fn count(&self) -> u32 {
         self.meta_data.count
     }
@@ -23,7 +24,7 @@ impl<'index> Impact<'index> {
         self.meta_data.impact
     }
 
-    pub fn from_encoded_slice(meta_data: MetaData, bytes: &'index [u8]) -> Impact<'index> {
+    pub fn from_encoded_slice(meta_data: MetaData, bytes: range::ByteRange) -> Impact {
         Impact {
             remaining_u32s: meta_data.count as usize,
             meta_data,
@@ -44,14 +45,14 @@ impl<'index> Impact<'index> {
             let compressed_len = match chunk.len() {
                 // full blocks -> SIMDBP
                 compress::BLOCK_LEN => {
-                    Compressor::compress_sorted_full(initial, &chunk, &mut compressed[..])
+                    Compressor::compress_sorted_full(initial, chunk, &mut compressed[..])
                     // let num_block_bits = bitpacker.num_bits_sorted(initial, chunk);
                     // output.write_u8(num_block_bits).unwrap();
                     // bitpacker.compress_sorted(initial, &chunk, &mut compressed[..], num_block_bits)
                 }
                 // non-full block -> streamvbyte
                 _ => {
-                    Compressor::compress_sorted(initial, &chunk, &mut compressed[..])
+                    Compressor::compress_sorted(initial, chunk, &mut compressed[..])
                     //streamvbyte::encode_delta_to_buf(&chunk, &mut compressed[..], initial).unwrap()
                 }
             };
@@ -68,8 +69,9 @@ impl<'index> Impact<'index> {
         )
     }
 
-    pub fn next_large_chunk<'buf, Compressor: crate::compress::Compressor>(
+    pub fn next_large_chunk<'buf, 'index, Compressor: crate::compress::Compressor>(
         &mut self,
+        index_bytes: &'index [u8],
         output_buf: &'buf mut compress::LargeBuffer,
     ) -> Option<&'buf compress::LargeBuffer> {
         if self.remaining_u32s >= output_buf.len() {
@@ -77,9 +79,10 @@ impl<'index> Impact<'index> {
                 .chunks_exact_mut(compress::BLOCK_LEN)
                 .for_each(|out_chunk| {
                     self.remaining_u32s -= compress::BLOCK_LEN;
+                    let bytes = &index_bytes[&self.bytes];
                     let compressed_len =
-                        Compressor::decompress_sorted_full(self.initial, &self.bytes, out_chunk);
-                    self.bytes = unsafe { self.bytes.get_unchecked(compressed_len..) };
+                        Compressor::decompress_sorted_full(self.initial, bytes, out_chunk);
+                    self.bytes.advance(compressed_len);
                     self.initial = unsafe { *out_chunk.get_unchecked(compress::BLOCK_LEN - 1) };
                 });
             Some(output_buf)
@@ -88,33 +91,32 @@ impl<'index> Impact<'index> {
         }
     }
 
-    pub fn next_chunk<'buf, Compressor: crate::compress::Compressor>(
+    pub fn next_chunk<'buf, 'index, Compressor: crate::compress::Compressor>(
         &mut self,
+        index_bytes: &'index [u8],
         output_buf: &'buf mut compress::Buffer,
     ) -> Option<&'buf [u32]> {
         // nothing decoded left. decode more
         match self.remaining_u32s {
-            0 => return None,
+            0 => None,
             1..=compress::BLOCK_LEN_M1 => {
                 let out_buf_start = compress::BLOCK_LEN - self.remaining_u32s;
+                let input = &index_bytes[&self.bytes];
                 Compressor::decompress_sorted(
                     self.initial,
-                    self.bytes,
+                    input,
                     &mut output_buf[out_buf_start..],
                 );
                 self.remaining_u32s = 0;
-                self.bytes = &self.bytes[self.bytes.len()..];
                 Some(&output_buf[out_buf_start..])
             }
             _ => {
                 // full block
                 self.remaining_u32s -= compress::BLOCK_LEN;
-                let compressed_len = Compressor::decompress_sorted_full(
-                    self.initial,
-                    &self.bytes,
-                    &mut output_buf[..],
-                );
-                self.bytes = &self.bytes[compressed_len..];
+                let input = &index_bytes[&self.bytes];
+                let compressed_len =
+                    Compressor::decompress_sorted_full(self.initial, input, &mut output_buf[..]);
+                self.bytes.advance(compressed_len);
                 self.initial = output_buf[compress::BLOCK_LEN - 1];
                 Some(&output_buf[..])
             }
@@ -124,6 +126,8 @@ impl<'index> Impact<'index> {
 
 #[cfg(test)]
 pub mod tests {
+    use crate::range::ByteRange;
+
     use super::*;
 
     #[test]
@@ -149,13 +153,16 @@ pub mod tests {
             4204496255, 4204496472, 4204496677, 4204496828, 4204496878, 4204497115, 4204497244,
             4204497293, 4204497356, 4204497474, 4204497652,
         ];
-        let (meta_data, encoded) = Impact::encode(org_impact, &docs);
+        let (meta_data, encoded) =
+            Impact::encode::<crate::compress::SimdBPandStreamVbyte>(org_impact, &docs);
 
         let data = &encoded[..];
-        let mut decode_buf = [0u32; BLOCK_LEN];
-        let mut recovered = Impact::from_encoded_slice(meta_data, &data);
+        let mut decode_buf = [0u32; compress::BLOCK_LEN];
+        let mut recovered = Impact::from_encoded_slice(meta_data, ByteRange::from_slice(data));
         let mut doc_iter = docs.into_iter();
-        while let Some(chunk) = recovered.next_chunk(&mut decode_buf) {
+        while let Some(chunk) =
+            recovered.next_chunk::<crate::compress::SimdBPandStreamVbyte>(data, &mut decode_buf)
+        {
             for num in chunk {
                 assert_eq!(Some(*num), doc_iter.next());
             }
@@ -204,13 +211,16 @@ pub mod tests {
     fn successfully_decode_impact(impact_list: ImpactList) -> bool {
         let impact = impact_list.impact;
         let docs = impact_list.docs;
-        let (meta_data, encoded) = Impact::encode(impact, &docs);
+        let (meta_data, encoded) =
+            Impact::encode::<crate::compress::SimdBPandStreamVbyte>(impact, &docs);
         let data = &encoded[..];
-        let mut decode_buf = [0u32; BLOCK_LEN];
-        let mut recovered = Impact::from_encoded_slice(meta_data, &data);
+        let mut decode_buf = [0u32; compress::BLOCK_LEN];
+        let mut recovered = Impact::from_encoded_slice(meta_data, ByteRange::from_slice(data));
         let mut doc_iter = docs.into_iter();
         let mut all_good = true;
-        while let Some(chunk) = recovered.next_chunk(&mut decode_buf) {
+        while let Some(chunk) =
+            recovered.next_chunk::<crate::compress::SimdBPandStreamVbyte>(data, &mut decode_buf)
+        {
             for num in chunk {
                 if Some(*num) != doc_iter.next() {
                     all_good = false;
@@ -228,7 +238,8 @@ pub mod tests {
     fn encoded_size_correct(impact_list: ImpactList) -> bool {
         let impact = impact_list.impact;
         let docs = impact_list.docs;
-        let (meta_data, encoded) = Impact::encode(impact, &docs);
+        let (meta_data, encoded) =
+            Impact::encode::<crate::compress::SimdBPandStreamVbyte>(impact, &docs);
         meta_data.bytes as usize == encoded.len()
     }
 

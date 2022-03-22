@@ -27,16 +27,16 @@ impl Compressor for SimdBPandStreamVbyte {
         let bitpacker = SimdbpCompressor::new();
         let num_block_bits = bitpacker.num_bits_sorted(initial, input);
         output.write_u8(num_block_bits).unwrap();
-        let bytes = bitpacker.compress_sorted(initial, input, &mut output[..], num_block_bits);
+        let bytes = bitpacker.compress_sorted(initial, input, &mut *output, num_block_bits);
         bytes + 1
     }
     fn compress_sorted(initial: u32, input: &[u32], output: &mut [u8]) -> usize {
-        streamvbyte::encode_delta_to_buf(&input, &mut output[..], initial).unwrap()
+        streamvbyte::encode_delta_to_buf(input, &mut *output, initial).unwrap()
     }
     fn decompress_sorted_full(initial: u32, input: &[u8], output: &mut [u32]) -> usize {
         let bitpacker = SimdbpCompressor::new();
         let num_bits = unsafe { *input.get_unchecked(0) };
-        let compressed_len = num_bits as usize * BLOCK_LEN >> 3;
+        let compressed_len = (num_bits as usize * BLOCK_LEN) >> 3;
         let bytes =
             bitpacker.decompress_sorted(initial, &input[1..compressed_len + 1], output, num_bits);
         bytes + 1
