@@ -13,8 +13,8 @@ impl List {
         let mut output = vec![];
         let mut impacts = smallvec::SmallVec::new();
         for (meta_data, data) in input
-            .into_iter()
-            .map(|(impact, docs)| impact::Impact::encode::<Compressor>(*impact, &docs))
+            .iter()
+            .map(|(impact, docs)| impact::Impact::encode::<Compressor>(*impact, docs))
         {
             impacts.push(meta_data);
             output.extend_from_slice(&data);
@@ -31,6 +31,8 @@ impl List {
 
 #[cfg(test)]
 mod tests {
+    use crate::range::ByteRange;
+
     use super::*;
 
     #[quickcheck_macros::quickcheck]
@@ -42,7 +44,7 @@ mod tests {
             .map(|il| (il.impact, il.docs))
             .collect();
 
-        let (encoded_list, _) = List::encode(&input);
+        let (encoded_list, _) = List::encode::<crate::compress::SimdBPandStreamVbyte>(&input);
         encoded_list.impacts.len() == input.len()
     }
 
@@ -55,7 +57,7 @@ mod tests {
             .map(|il| (il.impact, il.docs))
             .collect();
 
-        let (encoded_list, _) = List::encode(&input);
+        let (encoded_list, _) = List::encode::<crate::compress::SimdBPandStreamVbyte>(&input);
         let mut all_good: bool = true;
         for (encoded_list, input_list) in encoded_list.impacts.iter().zip(input) {
             if encoded_list.count as usize != input_list.1.len() {
@@ -75,7 +77,8 @@ mod tests {
             .map(|il| (il.impact, il.docs))
             .collect();
 
-        let (encoded_list, encoded_data) = List::encode(&input);
+        let (encoded_list, encoded_data) =
+            List::encode::<crate::compress::SimdBPandStreamVbyte>(&input);
         let total_size: usize = encoded_list.impacts.iter().map(|m| m.bytes as usize).sum();
         total_size == encoded_data.len()
     }
@@ -89,7 +92,8 @@ mod tests {
             .map(|il| (il.impact, il.docs))
             .collect();
 
-        let (encoded_list, encoded_data) = List::encode(&input);
+        let (encoded_list, encoded_data) =
+            List::encode::<crate::compress::SimdBPandStreamVbyte>(&input);
 
         let mut cur_offset: usize = 0;
         let mut all_good = true;
@@ -99,11 +103,16 @@ mod tests {
             .zip(input.into_iter())
             .for_each(|(meta_data, (_, docs))| {
                 let stop = cur_offset + meta_data.bytes as usize;
-                let data = &encoded_data[cur_offset..stop];
-                let mut decode_buf = [0u32; impact::BLOCK_LEN];
-                let mut recovered = impact::Impact::from_encoded_slice(meta_data, &data);
+                let mut decode_buf = [0u32; crate::compress::BLOCK_LEN];
+                let mut recovered =
+                    impact::Impact::from_encoded_slice(meta_data, ByteRange::new(cur_offset, stop));
                 let mut doc_iter = docs.into_iter();
-                while let Some(chunk) = recovered.next_chunk(&mut decode_buf) {
+                while let Some(chunk) = recovered
+                    .next_chunk::<crate::compress::SimdBPandStreamVbyte>(
+                        &encoded_data,
+                        &mut decode_buf,
+                    )
+                {
                     for num in chunk {
                         if Some(*num) != doc_iter.next() {
                             all_good = false;

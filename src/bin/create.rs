@@ -1,7 +1,5 @@
 use structopt::StructOpt;
 
-use ioqp;
-
 #[derive(StructOpt, Debug)]
 #[structopt(name = "create", about = "create ioqp indexes")]
 struct Args {

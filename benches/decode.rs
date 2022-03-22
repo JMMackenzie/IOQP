@@ -7,20 +7,22 @@ use criterion::Criterion;
 use criterion::{criterion_group, criterion_main};
 use rand::Rng;
 
+type Compressor = ioqp::compress::SimdBPandStreamVbyte;
+
 fn decode_list(
     meta_data: ioqp::impact::MetaData,
-    data: &Vec<u8>,
-    large_decode_buf: &mut [u32; ioqp::impact::LARGE_BUFFER_FACTOR * ioqp::impact::BLOCK_LEN],
-    decode_buf: &mut [u32; ioqp::impact::BLOCK_LEN],
+    data: &[u8],
+    large_decode_buf: &mut [u32; ioqp::compress::LARGE_BLOCK_LEN],
+    decode_buf: &mut [u32; ioqp::compress::BLOCK_LEN],
 ) -> u64 {
-    let mut impact = Impact::from_encoded_slice(meta_data, &data[..]);
+    let mut impact = Impact::from_encoded_slice(meta_data, ioqp::ByteRange::from_slice(data));
     let mut sum: u64 = 0;
-    while let Some(chunk) = impact.next_large_chunk(large_decode_buf) {
+    while let Some(chunk) = impact.next_large_chunk::<Compressor>(data, large_decode_buf) {
         for doc_id in chunk {
             sum += *doc_id as u64;
         }
     }
-    while let Some(chunk) = impact.next_chunk(decode_buf) {
+    while let Some(chunk) = impact.next_chunk::<Compressor>(data, decode_buf) {
         chunk.iter().for_each(|doc_id| {
             sum += *doc_id as u64;
         });
@@ -49,16 +51,16 @@ fn create_list(
             }
         }
     }
-    Impact::encode(1, &increasing_seq)
+    Impact::encode::<Compressor>(1, &increasing_seq)
 }
 
 fn bench_decode_impacts(c: &mut Criterion) {
-    let mut decode_buf = [0u32; ioqp::impact::BLOCK_LEN];
-    let mut large_decode_buf = [0u32; ioqp::impact::LARGE_BUFFER_FACTOR * ioqp::impact::BLOCK_LEN];
+    let mut decode_buf = [0u32; ioqp::compress::BLOCK_LEN];
+    let mut large_decode_buf = [0u32; ioqp::compress::LARGE_BLOCK_LEN];
 
     static K: usize = 1000;
     let mut group = c.benchmark_group("decode");
-    for size in [1 * K, 4 * K, 16 * K, 64 * K, 256 * K, 1024 * K].iter() {
+    for size in [K, 4 * K, 16 * K, 64 * K, 256 * K, 1024 * K].iter() {
         group.throughput(Throughput::Elements(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
             b.iter_batched(

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -9,10 +10,16 @@ use rayon::iter::ParallelIterator;
 use std::cmp::Reverse;
 
 use crate::ciff;
+use crate::impact;
 use crate::list;
+use crate::range::ByteRange;
+use crate::result::SearchResult;
 use crate::score;
 use crate::search;
+use crate::search::SearchScratch;
 use crate::util;
+use crate::ScoreType;
+use crate::SearchResults;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct Index<C: crate::compress::Compressor> {
@@ -25,6 +32,8 @@ pub struct Index<C: crate::compress::Compressor> {
     max_doc_id: u32,
     num_postings: usize,
     impact_type: std::marker::PhantomData<C>,
+    #[serde(skip)]
+    search_bufs: parking_lot::Mutex<Vec<search::SearchScratch>>,
 }
 
 impl<Compressor: crate::compress::Compressor> Index<Compressor> {
@@ -192,10 +201,10 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                         .map(|(impact, docs)| (impact.0, docs))
                         .collect();
                     all_postings.push((term, final_postings));
-                },
-                Some(ciff::CiffRecord::Document{ external_id, .. } ) => {
+                }
+                Some(ciff::CiffRecord::Document { external_id, .. }) => {
                     docmap.push(external_id);
-                },
+                }
                 None => break,
             }
         }
@@ -222,15 +231,24 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             list_data.extend_from_slice(&term_data);
         }
 
+        let num_levels = uniq_levels.len();
+        let max_level = uniq_levels.into_iter().max().unwrap() as usize;
+        let search_bufs = parking_lot::Mutex::new(
+            (0..2048)
+                .map(|_| search::SearchScratch::from_index(max_level, max_doc_id))
+                .collect(),
+        );
+
         Ok(Index {
             docmap,
             vocab,
             list_data,
-            num_levels: uniq_levels.len(),
-            max_level: uniq_levels.into_iter().max().unwrap() as usize,
+            num_levels,
+            max_level,
             max_doc_id,
             num_postings,
             impact_type: std::marker::PhantomData,
+            search_bufs,
         })
     }
 
@@ -276,9 +294,203 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
     pub fn docmap(&self) -> &Vec<String> {
         &self.docmap
     }
-    
-    pub fn searcher(&self) -> search::Searcher<'_, Compressor> {
-        search::Searcher::with_index(&self)
+
+    fn determine_impact_segments<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
+        &self,
+        data: &mut SearchScratch,
+        tokens: &[S],
+    ) -> usize {
+        // determine what to decompress
+        data.impacts.iter_mut().for_each(|i| i.clear());
+        tokens
+            .iter()
+            .filter_map(|tok| match self.impact_list(tok.as_ref()) {
+                Some(list) => {
+                    let mut start = list.start_byte_offset;
+                    Some(
+                        list.impacts
+                            .iter()
+                            .map(|ti| {
+                                let stop = start + ti.bytes as usize;
+                                data.impacts[ti.impact as usize].push(
+                                    impact::Impact::from_encoded_slice(
+                                        *ti,
+                                        ByteRange::new(start, stop),
+                                    ),
+                                );
+                                start += ti.bytes as usize;
+                                ti.count
+                            })
+                            .sum::<u32>(),
+                    )
+                }
+                None => {
+                    //println!("unknown query token '{}'", tok);
+                    None
+                }
+            })
+            .sum::<u32>() as usize
     }
 
+    fn process_impact_segments(&self, data: &mut SearchScratch, mut postings_budget: i64) {
+        data.accumulators.iter_mut().for_each(|x| *x = 0);
+        let impact_iter = data.impacts.iter_mut().rev().flat_map(|i| i.iter_mut());
+        for impact_group in impact_iter {
+            if postings_budget < 0 {
+                break;
+            }
+            let num_postings = impact_group.count() as i64;
+            let impact = impact_group.impact();
+            while let Some(chunk) = impact_group
+                .next_large_chunk::<Compressor>(&self.list_data, &mut data.large_decode_buf)
+            {
+                for doc_id in chunk {
+                    data.accumulators[*doc_id as usize] += impact as ScoreType;
+                    // let entry = self.accumulators.entry(*doc_id).or_insert(0);
+                    // *entry += impact;
+                }
+            }
+            while let Some(chunk) =
+                impact_group.next_chunk::<Compressor>(&self.list_data, &mut data.decode_buf)
+            {
+                for doc_id in chunk {
+                    data.accumulators[*doc_id as usize] += impact as ScoreType;
+                    // let entry = self.accumulators.entry(*doc_id).or_insert(0);
+                    // *entry += impact;
+                }
+            }
+            postings_budget -= num_postings;
+        }
+    }
+
+    fn determine_topk(&self, data: &mut SearchScratch, k: usize) -> Vec<SearchResult> {
+        let mut heap = BinaryHeap::with_capacity(k + 1);
+        let block_offset = k;
+        data.accumulators[..k]
+            .iter()
+            .enumerate()
+            .for_each(|(doc_id, score)| {
+                heap.push(SearchResult {
+                    doc_id: doc_id as u32,
+                    score: *score,
+                });
+            });
+        data.accumulators[k..]
+            .iter()
+            .enumerate()
+            .for_each(|(doc_id, &score)| {
+                let top = heap.peek().unwrap();
+                if top.score < score {
+                    heap.push(SearchResult {
+                        doc_id: (doc_id + block_offset) as u32,
+                        score,
+                    });
+                    heap.pop();
+                }
+            });
+        heap.into_sorted_vec()
+    }
+
+    fn determine_topk_chunks(&self, data: &mut SearchScratch, k: usize) -> Vec<SearchResult> {
+        let heap = &mut data.heap;
+        let accumulators = &mut data.accumulators;
+
+        heap.clear();
+        let block_offset = k;
+        accumulators[..k]
+            .iter()
+            .enumerate()
+            .for_each(|(doc_id, score)| {
+                heap.push(SearchResult {
+                    doc_id: doc_id as u32,
+                    score: *score,
+                });
+            });
+
+        const CHUNK_SIZE: u32 = 2048;
+
+        let mut doc_id = 0;
+        accumulators[k..]
+            .chunks(CHUNK_SIZE as usize)
+            .for_each(|scores| {
+                let threshold = heap.peek().unwrap().score;
+                //let max = scores.iter().max().unwrap();
+                let max_or_thres = unsafe { crate::util::determine_max(scores, threshold) };
+                if max_or_thres > threshold {
+                    scores.iter().for_each(|&score| {
+                        let top = heap.peek().unwrap();
+                        if top.score < score {
+                            heap.push(SearchResult {
+                                doc_id: (doc_id + block_offset as u32),
+                                score,
+                            });
+                            heap.pop();
+                        }
+                        doc_id += 1;
+                    });
+                } else {
+                    doc_id += CHUNK_SIZE;
+                }
+            });
+
+        // only alloc happens here
+        let mut result = Vec::new();
+        while let Some(elem) = heap.pop() {
+            result.push(elem);
+        }
+        result
+    }
+
+    pub fn query_fraction<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
+        &self,
+        tokens: &[S],
+        rho: f32,
+        query_id: Option<usize>,
+        k: usize,
+    ) -> SearchResults {
+        let start = std::time::Instant::now();
+
+        let mut search_buf =
+            self.search_bufs.lock().pop().unwrap_or_else(|| {
+                search::SearchScratch::from_index(self.max_level, self.max_doc_id)
+            });
+
+        let total_postings = self.determine_impact_segments(&mut search_buf, tokens);
+        let postings_budget = (total_postings as f32 * rho).ceil() as i64;
+        self.process_impact_segments(&mut search_buf, postings_budget);
+        let topk = self.determine_topk(&mut search_buf, k);
+
+        self.search_bufs.lock().push(search_buf);
+        SearchResults {
+            topk,
+            took: start.elapsed(),
+            qid: query_id.unwrap_or_default(),
+        }
+    }
+
+    pub fn query_fixed<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
+        &self,
+        tokens: &[S],
+        postings_budget: i64,
+        query_id: Option<usize>,
+        k: usize,
+    ) -> SearchResults {
+        let start = std::time::Instant::now();
+
+        let mut search_buf =
+            self.search_bufs.lock().pop().unwrap_or_else(|| {
+                search::SearchScratch::from_index(self.max_level, self.max_doc_id)
+            });
+
+        self.determine_impact_segments(&mut search_buf, tokens);
+        self.process_impact_segments(&mut search_buf, postings_budget);
+        let topk = self.determine_topk_chunks(&mut search_buf, k);
+
+        self.search_bufs.lock().push(search_buf);
+        SearchResults {
+            topk,
+            took: start.elapsed(),
+            qid: query_id.unwrap_or_default(),
+        }
+    }
 }
