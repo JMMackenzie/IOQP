@@ -37,7 +37,6 @@ pub struct Index<C: crate::compress::Compressor> {
 }
 
 impl<Compressor: crate::compress::Compressor> Index<Compressor> {
-
     pub fn quantize_from_ciff_file<P: AsRef<std::path::Path> + std::fmt::Debug>(
         input_file_name: P,
         bm25_k1: f32,
@@ -47,7 +46,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let mut ciff_file = std::io::BufReader::new(ciff_file);
         let mut ciff_reader = ciff::Reader::new(&mut ciff_file)?;
         let pb_plist = util::progress_bar("read ciff", ciff_reader.num_postings_lists());
-        let avg_doclen = ciff_reader.average_doclength(); 
+        let avg_doclen = ciff_reader.average_doclength();
         let mut all_postings = Vec::new();
         let mut uniq_levels: HashSet<u16> = HashSet::new();
         let mut num_postings = 0;
@@ -63,24 +62,28 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             match ciff_reader.next() {
                 Some(ciff::CiffRecord::PostingsList(plist)) => {
                     pb_plist.inc(1);
-                    let mut t_plist = Vec::new(); 
+                    let mut t_plist = Vec::new();
                     let term = plist.get_term().to_string();
-                    temp_lexicon.push(term); 
+                    temp_lexicon.push(term);
                     let postings = plist.get_postings();
                     let mut doc_id: u32 = 0;
                     for posting in postings {
                         doc_id += posting.get_docid() as u32;
                         max_doc_id = max_doc_id.max(doc_id);
                         let tf = posting.get_tf() as f32; // Use f32 so we can overwrite later...
-                        t_plist.push( (doc_id, tf) );
+                        t_plist.push((doc_id, tf));
                         num_postings += 1;
                     }
                     temp_idx.push(t_plist);
-                },
-                Some(ciff::CiffRecord::Document{ external_id, length, .. } ) => {
+                }
+                Some(ciff::CiffRecord::Document {
+                    external_id,
+                    length,
+                    ..
+                }) => {
                     docmap.push(external_id);
-                    temp_doclen.push( length as f64 / avg_doclen);
-                },
+                    temp_doclen.push(length as f64 / avg_doclen);
+                }
                 None => break,
             }
         }
@@ -89,8 +92,8 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let pb_score = util::progress_bar("score postings", temp_idx.len());
         // Init the scorer
         let scorer = score::BM25::new(bm25_k1, bm25_b, max_doc_id);
-        let mut max_score:f32 = 0.0;
- 
+        let mut max_score: f32 = 0.0;
+
         // (2) We now have all postings as tuple pairs. Let's score/store them.
         for plist in temp_idx.iter_mut() {
             let list_len = plist.len() as u32;
@@ -102,35 +105,31 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         }
         pb_score.finish_and_clear();
 
-
-
         let pb_quantizer = util::progress_bar("quantize postings", temp_idx.len());
 
         // (3) We now have the index-wide max_score, and the score for each impact
         // Quantize and organize
-        let quantizer = score::LinearQuantizer::new(max_score); 
+        let quantizer = score::LinearQuantizer::new(max_score);
 
         for (idx, plist) in temp_idx.iter().enumerate() {
-
             let mut posting_map: BTreeMap<Reverse<u16>, Vec<u32>> = BTreeMap::new();
-            
+
             for (docid, score) in plist.iter() {
                 let impact = quantizer.quantize(*score) as u16;
                 let entry = posting_map.entry(Reverse(impact)).or_default();
                 entry.push(*docid);
                 num_postings += 1;
             }
-                    
+
             uniq_levels.extend(posting_map.keys().map(|r| r.0));
             let final_postings: Vec<(u16, Vec<u32>)> = posting_map
-                    .into_iter()
-                    .map(|(impact, docs)| (impact.0, docs))
-                    .collect();
+                .into_iter()
+                .map(|(impact, docs)| (impact.0, docs))
+                .collect();
             all_postings.push((temp_lexicon[idx].clone(), final_postings));
             pb_quantizer.inc(1);
         }
         pb_quantizer.finish_and_clear();
-
 
         let pb_encode = util::progress_bar("encode postings", all_postings.len());
         let encoded_data: Vec<(String, (list::List, Vec<u8>))> = all_postings
@@ -153,15 +152,24 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             list_data.extend_from_slice(&term_data);
         }
 
+        let num_levels = uniq_levels.len();
+        let max_level = uniq_levels.into_iter().max().unwrap() as usize;
+        let search_bufs = parking_lot::Mutex::new(
+            (0..2048)
+                .map(|_| search::SearchScratch::from_index(max_level, max_doc_id))
+                .collect(),
+        );
+
         Ok(Index {
             docmap,
             vocab,
             list_data,
-            num_levels: uniq_levels.len(),
-            max_level: uniq_levels.into_iter().max().unwrap() as usize,
+            num_levels,
+            max_level,
             max_doc_id,
             num_postings,
             impact_type: std::marker::PhantomData,
+            search_bufs,
         })
     }
 
