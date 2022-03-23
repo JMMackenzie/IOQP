@@ -39,6 +39,7 @@ pub struct Index<C: crate::compress::Compressor> {
 impl<Compressor: crate::compress::Compressor> Index<Compressor> {
     pub fn quantize_from_ciff_file<P: AsRef<std::path::Path> + std::fmt::Debug>(
         input_file_name: P,
+        quant_bits: u32,
         bm25_k1: f32,
         bm25_b: f32,
     ) -> anyhow::Result<Self> {
@@ -109,7 +110,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
 
         // (3) We now have the index-wide max_score, and the score for each impact
         // Quantize and organize
-        let quantizer = score::LinearQuantizer::new(max_score);
+        let quantizer = score::LinearQuantizer::new(max_score, quant_bits);
 
         for (idx, plist) in temp_idx.iter().enumerate() {
             let mut posting_map: BTreeMap<Reverse<u16>, Vec<u32>> = BTreeMap::new();
