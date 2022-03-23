@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::hash::BuildHasherDefault;
+use twox_hash::XxHash64;
 
 use indicatif::ParallelProgressIterator;
 use indicatif::ProgressIterator;
@@ -27,7 +29,7 @@ use crate::SearchResults;
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct Index<C: crate::compress::Compressor> {
     docmap: Vec<String>,
-    vocab: HashMap<String, list::List>,
+    vocab: HashMap<String, list::List, BuildHasherDefault<XxHash64>>,
     #[serde(with = "serde_bytes")]
     pub list_data: Vec<u8>,
     num_levels: usize,
@@ -154,7 +156,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         }
 
         let pb_write = util::progress_bar("create index", encoded_data.len());
-        let mut vocab = HashMap::new();
+        let mut vocab: HashMap<_, _, BuildHasherDefault<XxHash64>> = Default::default();
         let mut list_data =
             Vec::with_capacity(encoded_data.iter().map(|(_, (_, data))| data.len()).sum());
         for (term, (mut list, term_data)) in encoded_data.into_iter().progress_with(pb_write) {
@@ -241,7 +243,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         }
 
         let pb_write = util::progress_bar("create index", encoded_data.len());
-        let mut vocab = HashMap::new();
+        let mut vocab: HashMap<_, _, BuildHasherDefault<XxHash64>> = Default::default();
         let mut list_data =
             Vec::with_capacity(encoded_data.iter().map(|(_, (_, data))| data.len()).sum());
         for (term, (mut list, term_data)) in encoded_data.into_iter().progress_with(pb_write) {
