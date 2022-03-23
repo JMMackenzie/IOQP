@@ -5,7 +5,10 @@ use std::collections::HashSet;
 
 use indicatif::ParallelProgressIterator;
 use indicatif::ProgressIterator;
+use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelIterator;
+use rayon::iter::IntoParallelRefIterator;
+use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::ParallelIterator;
 use std::cmp::Reverse;
 
@@ -48,8 +51,6 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let mut ciff_reader = ciff::Reader::new(&mut ciff_file)?;
         let pb_plist = util::progress_bar("read ciff", ciff_reader.num_postings_lists());
         let avg_doclen = ciff_reader.average_doclength();
-        let mut all_postings = Vec::new();
-        let mut uniq_levels: HashSet<u16> = HashSet::new();
         let mut num_postings = 0;
         let mut max_doc_id = 0;
         let mut docmap = Vec::new();
@@ -93,18 +94,24 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let pb_score = util::progress_bar("score postings", temp_idx.len());
         // Init the scorer
         let scorer = score::BM25::new(bm25_k1, bm25_b, max_doc_id);
-        let mut max_score: f32 = 0.0;
 
         // (2) We now have all postings as tuple pairs. Let's score/store them.
-        for plist in temp_idx.iter_mut() {
-            let list_len = plist.len() as u32;
-            for (docid, freq) in plist.iter_mut() {
-                *freq = scorer.score(*freq as u32, list_len, temp_doclen[*docid as usize] as f32);
-                max_score = max_score.max(*freq);
-            }
-            pb_score.inc(1);
-        }
-        pb_score.finish_and_clear();
+        let max_score = temp_idx
+            .par_iter_mut()
+            .progress_with(pb_score)
+            .map(|plist| {
+                let list_len = plist.len() as u32;
+                let mut max_score: f32 = 0.0;
+                for (docid, freq) in plist.iter_mut() {
+                    *freq =
+                        scorer.score(*freq as u32, list_len, temp_doclen[*docid as usize] as f32);
+                    max_score = max_score.max(*freq);
+                }
+                ordered_float::OrderedFloat(max_score)
+            })
+            .max()
+            .expect("max_score")
+            .into_inner();
 
         let pb_quantizer = util::progress_bar("quantize postings", temp_idx.len());
 
@@ -112,25 +119,28 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         // Quantize and organize
         let quantizer = score::LinearQuantizer::new(max_score, quant_bits);
 
-        for (idx, plist) in temp_idx.iter().enumerate() {
-            let mut posting_map: BTreeMap<Reverse<u16>, Vec<u32>> = BTreeMap::new();
-
-            for (docid, score) in plist.iter() {
-                let impact = quantizer.quantize(*score) as u16;
-                let entry = posting_map.entry(Reverse(impact)).or_default();
-                entry.push(*docid);
-                num_postings += 1;
-            }
-
-            uniq_levels.extend(posting_map.keys().map(|r| r.0));
-            let final_postings: Vec<(u16, Vec<u32>)> = posting_map
-                .into_iter()
-                .map(|(impact, docs)| (impact.0, docs))
-                .collect();
-            all_postings.push((temp_lexicon[idx].clone(), final_postings));
-            pb_quantizer.inc(1);
-        }
-        pb_quantizer.finish_and_clear();
+        let all_postings: Vec<_> = temp_idx
+            .par_iter()
+            .enumerate()
+            .progress_with(pb_quantizer)
+            .map(|(idx, plist)| {
+                let mut posting_map: BTreeMap<Reverse<u16>, Vec<u32>> = BTreeMap::new();
+                for (docid, score) in plist.iter() {
+                    let impact = quantizer.quantize(*score) as u16;
+                    let entry = posting_map.entry(Reverse(impact)).or_default();
+                    entry.push(*docid);
+                }
+                let final_postings: Vec<(u16, Vec<u32>)> = posting_map
+                    .into_iter()
+                    .map(|(impact, docs)| (impact.0, docs))
+                    .collect();
+                (temp_lexicon[idx].clone(), final_postings)
+            })
+            .collect();
+        let uniq_levels: HashSet<u16> = all_postings
+            .par_iter()
+            .flat_map(|pl| pl.1.par_iter().map(|l| l.0))
+            .collect();
 
         let pb_encode = util::progress_bar("encode postings", all_postings.len());
         let encoded_data: Vec<(String, (list::List, Vec<u8>))> = all_postings
