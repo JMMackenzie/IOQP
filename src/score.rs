@@ -31,7 +31,6 @@ impl BM25 {
     }
 }
 
-const QUANT_BITS:u32 = 8;
 
 #[derive(Clone, Copy)]
 pub struct LinearQuantizer {
@@ -41,10 +40,10 @@ pub struct LinearQuantizer {
 
 impl LinearQuantizer {
 
-    pub fn new(global_max: f32) -> LinearQuantizer {
+    pub fn new(global_max: f32, quant_bits: u32) -> LinearQuantizer {
         LinearQuantizer {
             global_max,
-            scale: (1_u32 << (QUANT_BITS)) as f32 / global_max,
+            scale: (1_u32 << (quant_bits)) as f32 / global_max,
         }
     }
 

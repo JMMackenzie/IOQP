@@ -18,13 +18,16 @@ struct Args {
     /// BM25 b parameter
     #[structopt(long, default_value = "0.4")]
     bm25_b: f32,
+    /// Number of bits to use for index quantization
+    #[structopt(short, long, default_value = "8")]
+    quant_bits: u32,
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Args::from_args();
 
     let index = if args.quantize {
-        ioqp::Index::<ioqp::SimdBPandStreamVbyte>::quantize_from_ciff_file(args.input, args.bm25_k1, args.bm25_b)
+        ioqp::Index::<ioqp::SimdBPandStreamVbyte>::quantize_from_ciff_file(args.input, args.quant_bits, args.bm25_k1, args.bm25_b)
     } else {
          ioqp::Index::<ioqp::SimdBPandStreamVbyte>::from_ciff_file(args.input)
     }?;
