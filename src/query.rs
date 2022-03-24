@@ -1,8 +1,15 @@
 use std::io::BufRead;
+use std::collections::HashMap;
+
+#[derive(Debug)]
+pub struct Term {
+    pub token: String,
+    pub freq: u32,
+}
 
 pub struct Query {
     pub id: usize,
-    pub tokens: Vec<String>,
+    pub tokens: Vec<Term>,
 }
 
 impl std::str::FromStr for Query {
@@ -10,7 +17,15 @@ impl std::str::FromStr for Query {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split(':').collect();
         let id = parts[0].parse::<usize>()?;
-        let tokens: Vec<String> = parts[1].split_whitespace().map(|s| s.to_owned()).collect();
+        let terms: Vec<String> = parts[1].split_whitespace().map(|s| s.to_owned()).collect();
+        let mut token_freqs : HashMap<String, u32> = HashMap::new();
+        for t in terms.iter() {
+            *token_freqs.entry(t.to_string()).or_insert(0) += 1;
+        }
+        let mut tokens = Vec::new();
+        for (token, freq) in token_freqs {
+            tokens.push(Term { token, freq });
+        }
         Ok(Query { id, tokens })
     }
 }

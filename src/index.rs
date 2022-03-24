@@ -25,6 +25,7 @@ use crate::search::SearchScratch;
 use crate::util;
 use crate::ScoreType;
 use crate::SearchResults;
+use crate::query::Term;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct Index<C: crate::compress::Compressor> {
@@ -316,16 +317,16 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         &self.docmap
     }
 
-    fn determine_impact_segments<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
+    fn determine_impact_segments( //<S: AsRef<Term> + std::fmt::Debug + std::fmt::Display>(
         &self,
         data: &mut SearchScratch,
-        tokens: &[S],
+        tokens: &[Term],
     ) -> usize {
         // determine what to decompress
         data.impacts.iter_mut().for_each(|i| i.clear());
         tokens
             .iter()
-            .filter_map(|tok| match self.impact_list(tok.as_ref()) {
+            .filter_map(|tok| match self.impact_list(&tok.token) {
                 Some(list) => {
                     let mut start = list.start_byte_offset;
                     Some(
@@ -462,9 +463,9 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         result
     }
 
-    pub fn query_fraction<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
+    pub fn query_fraction( //<S: AsRef<Term> + std::fmt::Debug + std::fmt::Display>(
         &self,
-        tokens: &[S],
+        tokens: &[Term],
         rho: f32,
         query_id: Option<usize>,
         k: usize,
@@ -489,9 +490,9 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         }
     }
 
-    pub fn query_fixed<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
+    pub fn query_fixed( //<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
         &self,
-        tokens: &[S],
+        tokens: &[Term],
         postings_budget: i64,
         query_id: Option<usize>,
         k: usize,
