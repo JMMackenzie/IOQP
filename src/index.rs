@@ -459,7 +459,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         while let Some(elem) = heap.pop() {
             result.push(elem);
         }
-        result
+        result.into_iter().rev().collect()
     }
 
     pub fn query_fraction<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
