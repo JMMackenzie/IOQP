@@ -33,6 +33,15 @@ impl Impact {
         }
     }
 
+    pub fn from_encoded_slice_weighted(meta_data: MetaData, bytes: range::ByteRange, query_weight:u16) -> Impact {
+        Impact {
+            remaining_u32s: meta_data.count as usize,
+            meta_data: MetaData { impact: meta_data.impact * query_weight, count: meta_data.count, bytes: meta_data.bytes },
+            initial: 0,
+            bytes,
+        }
+    }
+
     pub fn encode<Compressor: crate::compress::Compressor>(
         impact: u16,
         docs: &[u32],

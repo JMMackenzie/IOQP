@@ -28,7 +28,7 @@ enum QueryMode {
 
 #[derive(serde::Deserialize)]
 struct QueryPayLoad {
-    query: String,
+    query: ioqp::query::Query,
     k: NonZeroUsize,
     query_mode: QueryMode,
 }
@@ -88,13 +88,12 @@ async fn saerch_post(
     index: Arc<IndexType>,
 ) -> Result<Json<ioqp::SearchResults>, ServeError> {
     let result = tokio::task::spawn_blocking(move || {
-        let query_tokens: Vec<&str> = query.query.split_whitespace().collect();
         match query.query_mode {
             QueryMode::Fraction(rho) => {
-                index.query_fraction(&query_tokens, rho, None, query.k.get())
+                index.query_fraction(&query.query.tokens, rho, None, query.k.get())
             }
             QueryMode::Fixed(postings_budget) => {
-                index.query_fixed(&query_tokens, postings_budget, None, query.k.get())
+                index.query_fixed(&query.query.tokens, postings_budget, None, query.k.get())
             }
         }
     })
@@ -110,13 +109,12 @@ async fn search(
 ) -> Result<Json<ioqp::SearchResults>, ServeError> {
     let query: QueryPayLoad = query.0;
     let result = tokio::task::spawn_blocking(move || {
-        let query_tokens: Vec<&str> = query.query.split_whitespace().collect();
         match query.query_mode {
             QueryMode::Fraction(rho) => {
-                index.query_fraction(&query_tokens, rho, None, query.k.get())
+                index.query_fraction(&query.query.tokens, rho, None, query.k.get())
             }
             QueryMode::Fixed(postings_budget) => {
-                index.query_fixed(&query_tokens, postings_budget, None, query.k.get())
+                index.query_fixed(&query.query.tokens, postings_budget, None, query.k.get())
             }
         }
     })

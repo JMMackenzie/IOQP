@@ -1,12 +1,15 @@
 use std::io::BufRead;
 use std::collections::HashMap;
 
-#[derive(Debug)]
+pub const MAX_QUERY_WEIGHT:usize = 32;
+
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct Term {
     pub token: String,
     pub freq: u32,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct Query {
     pub id: usize,
     pub tokens: Vec<Term>,
