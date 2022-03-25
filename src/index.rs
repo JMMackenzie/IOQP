@@ -320,7 +320,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         &self.docmap
     }
 
-    fn determine_impact_segments( //<S: AsRef<Term> + std::fmt::Debug + std::fmt::Display>(
+    fn determine_impact_segments( 
         &self,
         data: &mut SearchScratch,
         tokens: &[Term],
@@ -467,7 +467,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         result
     }
 
-    pub fn query_fraction( //<S: AsRef<Term> + std::fmt::Debug + std::fmt::Display>(
+    pub fn query_fraction(
         &self,
         tokens: &[Term],
         rho: f32,
@@ -494,7 +494,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         }
     }
 
-    pub fn query_fixed( //<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
+    pub fn query_fixed(
         &self,
         tokens: &[Term],
         postings_budget: i64,
