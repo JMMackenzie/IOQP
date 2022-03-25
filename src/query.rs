@@ -27,7 +27,7 @@ impl std::str::FromStr for Query {
         }
         let mut tokens = Vec::new();
         for (token, freq) in token_freqs {
-            let freq = freq.max(MAX_QUERY_WEIGHT as u32);
+            let freq = freq.min(MAX_QUERY_WEIGHT as u32);
             tokens.push(Term { token, freq });
         }
         Ok(Query { id, tokens })
