@@ -53,12 +53,9 @@ struct Args {
     /// trec output file
     #[structopt(short, long)]
     output_file: std::path::PathBuf,
-    /// Run warmup round
+    /// touch term postings present in queryfile
     #[structopt(long)]
     warmup: bool,
-    /// Number of warmup queries
-    #[structopt(long)]
-    warmup_num: Option<usize>,
     /// Whether or not to obey query weights
     #[structopt(long)]
     weighted: bool,
@@ -77,29 +74,19 @@ fn main() -> anyhow::Result<()> {
         Some(num_queries) => num_queries,
         None => qrys.len(),
     };
-    let mut hist = Vec::with_capacity(num_queries);
-    let pb = ioqp::util::progress_bar("process_queries", num_queries);
     if args.warmup {
-        let warmup_num = match args.warmup_num {
-            Some(warmup_num) => warmup_num,
-            None => num_queries,
-        };
-        let pb_warmup = ioqp::util::progress_bar("warmup queries", warmup_num);
-        let devnull = std::fs::File::create("/dev/null").expect("can not open /dev/null");
-        for qry in qrys
-            .iter()
-            .cycle()
-            .take(warmup_num)
-            .progress_with(pb_warmup)
-        {
-            // fixed budget postings and `k`
-            let result = index.query_fixed(&qry.tokens, 10, Some(qry.id), 10);
-            result.to_trec_file(index.docmap(), &devnull);
+        let mut uniq_tokens: Vec<_> = qrys.iter().flat_map(|q| q.tokens.clone()).collect();
+        uniq_tokens.sort_unstable();
+        uniq_tokens.dedup();
+        let pb = ioqp::util::progress_bar("warmup", uniq_tokens.len());
+        for t in uniq_tokens.iter().progress_with(pb) {
+            index.query_warmup(std::slice::from_ref(&t));
         }
     }
+    let mut hist = Vec::with_capacity(num_queries);
+    let pb = ioqp::util::progress_bar("process_queries", num_queries);
     match args.mode {
         QueryMode::Fraction(rho) => {
-            pb.reset();
             for qry in qrys.iter().cycle().take(num_queries).progress_with(pb) {
                 let result =
                     index.query_fraction(&qry.tokens, rho, Some(qry.id), usize::from(args.k));
@@ -108,7 +95,6 @@ fn main() -> anyhow::Result<()> {
             }
         }
         QueryMode::Fixed(budget) => {
-            pb.reset();
             for qry in qrys.iter().cycle().take(num_queries).progress_with(pb) {
                 let result = index.query_fixed(
                     &qry.tokens,

@@ -1,12 +1,31 @@
 use std::io::BufRead;
 use std::collections::HashMap;
+use std::cmp::Ordering;
 
 pub const MAX_TERM_WEIGHT:usize = 32;
 
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(Eq, Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct Term {
     pub token: String,
     pub freq: u32,
+}
+
+impl PartialEq for Term {
+    fn eq(&self, other: &Self) -> bool {
+        self.token == other.token
+    }
+}
+
+impl Ord for Term {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other.token.cmp(&self.token)
+    }
+}
+
+impl PartialOrd for Term {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -82,5 +101,3 @@ pub fn read_queries<P: AsRef<std::path::Path> + std::fmt::Debug>(
 
     Ok(queries)
 }
-
-
