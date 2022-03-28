@@ -18,4 +18,6 @@ pub use index::Index;
 pub use range::ByteRange;
 pub use result::SearchResults;
 
-type ScoreType = i16;
+// Configurable: The data type for accumulating scores.
+type ScoreType = u16;
+
