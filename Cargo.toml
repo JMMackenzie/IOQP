@@ -43,6 +43,10 @@ rand = "0.8"
 name = "decode"
 harness = false
 
+[[bench]]
+name = "determine_max"
+harness = false
+
 [profile.release]
 debug = true
 panic = "abort"
