@@ -20,6 +20,7 @@ pub trait Compressor {
     fn decompress_sorted(initial: u32, input: &[u8], output: &mut [u32]) -> usize;
 }
 
+#[derive(Debug)]
 pub struct SimdBPandStreamVbyte;
 
 impl Compressor for SimdBPandStreamVbyte {
@@ -48,7 +49,9 @@ impl Compressor for SimdBPandStreamVbyte {
 
 use byteorder::LittleEndian;
 
+#[derive(Debug)]
 pub struct Uncompressed;
+
 impl Compressor for Uncompressed {
     fn compress_sorted_full(_initial: u32, input: &[u32], mut output: &mut [u8]) -> usize {
         for val in input {

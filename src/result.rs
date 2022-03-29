@@ -25,7 +25,7 @@ impl PartialEq for SearchResult {
     }
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub struct SearchResults {
     pub topk: Vec<SearchResult>,
     pub took: std::time::Duration,

@@ -1,5 +1,6 @@
 use std::io::BufRead;
 
+#[derive(Debug)]
 pub struct Query {
     pub id: usize,
     pub tokens: Vec<String>,
