@@ -17,6 +17,13 @@ fn main() {
     let code = read_to_string(&path).expect("Failed to read generated file");
     let mut writer = BufWriter::new(File::create(path).unwrap());
     for line in code.lines() {
+        let mut line = line.to_string();
+        // Fix hidden lifetime parameters in generated types.
+        // The `elided_lifetimes_in_paths` lint is a crate level lint, rather than enable it crate
+        // wide we fix the warnings with the generated code.
+        if line.ends_with("::ReflectValueRef {") {
+            line = line.replace("ReflectValueRef", "ReflectValueRef<'_>");
+        }
         if !line.contains("//!") && !line.contains("#!") {
             writer
                 .write_all(line.as_bytes())

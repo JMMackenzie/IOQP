@@ -440,8 +440,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             .chunks(CHUNK_SIZE as usize)
             .for_each(|scores| {
                 let threshold = heap.peek().unwrap().score;
-                //let max = scores.iter().max().unwrap();
-                let max_or_thres = unsafe { crate::util::determine_max(scores, threshold) };
+                let max_or_thres = crate::util::determine_max(scores, threshold);
                 if max_or_thres > threshold {
                     scores.iter().for_each(|&score| {
                         let top = heap.peek().unwrap();
@@ -464,7 +463,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         while let Some(elem) = heap.pop() {
             result.push(elem);
         }
-        result
+        result.into_iter().rev().collect()
     }
 
     pub fn query_fraction(
