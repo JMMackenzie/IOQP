@@ -17,9 +17,9 @@ pub struct SearchScratch {
 }
 
 impl SearchScratch {
-    pub fn from_index(max_level: usize, max_doc_id: u32) -> Self {
+    pub fn from_index(max_level: usize, max_weight: usize, max_doc_id: u32) -> Self {
         Self {
-            impacts: (0..=max_level).map(|_| Vec::new()).collect(),
+            impacts: (0..=max_level * max_weight).map(|_| Vec::new()).collect(),
             accumulators: vec![0; max_doc_id as usize + 1],
             large_decode_buf: [0; compress::LARGE_BLOCK_LEN],
             decode_buf: [0; compress::BLOCK_LEN],

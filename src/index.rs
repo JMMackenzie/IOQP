@@ -25,6 +25,7 @@ use crate::search::SearchScratch;
 use crate::util;
 use crate::ScoreType;
 use crate::SearchResults;
+use crate::query::{MAX_TERM_WEIGHT, Term};
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct Index<C: crate::compress::Compressor> {
@@ -35,6 +36,7 @@ pub struct Index<C: crate::compress::Compressor> {
     num_levels: usize,
     max_level: usize,
     max_doc_id: u32,
+    max_term_weight: usize,
     num_postings: usize,
     impact_type: std::marker::PhantomData<C>,
     #[serde(skip)]
@@ -169,7 +171,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let max_level = uniq_levels.into_iter().max().unwrap() as usize;
         let search_bufs = parking_lot::Mutex::new(
             (0..2048)
-                .map(|_| search::SearchScratch::from_index(max_level, max_doc_id))
+                .map(|_| search::SearchScratch::from_index(max_level, MAX_TERM_WEIGHT, max_doc_id))
                 .collect(),
         );
 
@@ -180,6 +182,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             num_levels,
             max_level,
             max_doc_id,
+            max_term_weight: MAX_TERM_WEIGHT,
             num_postings,
             impact_type: std::marker::PhantomData,
             search_bufs,
@@ -256,7 +259,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let max_level = uniq_levels.into_iter().max().unwrap() as usize;
         let search_bufs = parking_lot::Mutex::new(
             (0..2048)
-                .map(|_| search::SearchScratch::from_index(max_level, max_doc_id))
+                .map(|_| search::SearchScratch::from_index(max_level, MAX_TERM_WEIGHT, max_doc_id))
                 .collect(),
         );
 
@@ -267,6 +270,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             num_levels,
             max_level,
             max_doc_id,
+            max_term_weight: MAX_TERM_WEIGHT,
             num_postings,
             impact_type: std::marker::PhantomData,
             search_bufs,
@@ -316,16 +320,16 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         &self.docmap
     }
 
-    fn determine_impact_segments<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
+    fn determine_impact_segments( 
         &self,
         data: &mut SearchScratch,
-        tokens: &[S],
+        tokens: &[Term],
     ) -> usize {
         // determine what to decompress
         data.impacts.iter_mut().for_each(|i| i.clear());
         tokens
             .iter()
-            .filter_map(|tok| match self.impact_list(tok.as_ref()) {
+            .filter_map(|tok| match self.impact_list(&tok.token) {
                 Some(list) => {
                     let mut start = list.start_byte_offset;
                     Some(
@@ -333,10 +337,11 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                             .iter()
                             .map(|ti| {
                                 let stop = start + ti.bytes as usize;
-                                data.impacts[ti.impact as usize].push(
-                                    impact::Impact::from_encoded_slice(
+                                data.impacts[ti.impact as usize * tok.freq as usize].push(
+                                    impact::Impact::from_encoded_slice_weighted(
                                         *ti,
                                         ByteRange::new(start, stop),
+                                        tok.freq as u16
                                     ),
                                 );
                                 start += ti.bytes as usize;
@@ -461,9 +466,9 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         result.into_iter().rev().collect()
     }
 
-    pub fn query_fraction<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
+    pub fn query_fraction(
         &self,
-        tokens: &[S],
+        tokens: &[Term],
         rho: f32,
         query_id: Option<usize>,
         k: usize,
@@ -472,7 +477,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
 
         let mut search_buf =
             self.search_bufs.lock().pop().unwrap_or_else(|| {
-                search::SearchScratch::from_index(self.max_level, self.max_doc_id)
+                search::SearchScratch::from_index(self.max_level, self.max_term_weight, self.max_doc_id)
             });
 
         let total_postings = self.determine_impact_segments(&mut search_buf, tokens);
@@ -488,9 +493,9 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         }
     }
 
-    pub fn query_fixed<S: AsRef<str> + std::fmt::Debug + std::fmt::Display>(
+    pub fn query_fixed(
         &self,
-        tokens: &[S],
+        tokens: &[Term],
         postings_budget: i64,
         query_id: Option<usize>,
         k: usize,
@@ -499,7 +504,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
 
         let mut search_buf =
             self.search_bufs.lock().pop().unwrap_or_else(|| {
-                search::SearchScratch::from_index(self.max_level, self.max_doc_id)
+                search::SearchScratch::from_index(self.max_level, self.max_term_weight, self.max_doc_id)
             });
 
         self.determine_impact_segments(&mut search_buf, tokens);
