@@ -72,17 +72,12 @@ pub fn read_queries<P: AsRef<std::path::Path> + std::fmt::Debug>(
         .filter_map(|l| l.parse::<Query>().ok())
         .collect();
 
-    // Check for overflows or Re-scale to max range
+    //  Re-scale to max range or 1
     for query in &mut queries {
         if weighted {
             query.rescale(MAX_TERM_WEIGHT);
         } else {
-            let max_tok_weight = query.tokens.iter().map(|p| p.freq).max().unwrap() as usize;
-            if max_tok_weight > MAX_TERM_WEIGHT {
-                eprintln!("WARN: Query weight {} > max permitted value {}. Rescaling all term weights to 1.", max_tok_weight, MAX_TERM_WEIGHT);
-                eprintln!("WARN: Did you mean to use --weighted?");
-                query.rescale(1);
-            }
+            query.rescale(1);
         }
     }
 
