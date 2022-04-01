@@ -1,7 +1,8 @@
 use std::io::BufRead;
 use std::collections::HashMap;
+use std::process;
 
-pub const MAX_QUERY_WEIGHT:usize = 32;
+pub const MAX_TERM_WEIGHT:usize = 32;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct Term {
@@ -27,23 +28,64 @@ impl std::str::FromStr for Query {
         }
         let mut tokens = Vec::new();
         for (token, freq) in token_freqs {
-            let freq = freq.min(MAX_QUERY_WEIGHT as u32);
             tokens.push(Term { token, freq });
         }
-        Ok(Query { id, tokens })
+        Ok( Query { id, tokens })
     }
+}
+
+impl Query {
+
+    // Constructor which rescales query weights uniformly into [1, max_weight]
+    pub fn with_rescale(id: usize, mut tokens: Vec<Term>, max_weight: usize) -> Self {
+        let max_tok_weight = tokens.iter().map(|p| p.freq).max().unwrap() as usize;
+        if max_tok_weight <= max_weight {
+            return Self { id, tokens }
+        }
+        for i in tokens.iter_mut() {
+            i.freq = (max_weight as f32 * (i.freq as f32) / (max_tok_weight as f32)).ceil() as u32;
+        }
+        Self { id, tokens }
+    }
+
+    // Rescales query terms in-place uniformly into [1, max_weight]
+    pub fn rescale(&mut self, max_weight: usize) {
+        let max_tok_weight = self.tokens.iter().map(|p| p.freq).max().unwrap() as usize;
+        if max_tok_weight > max_weight {
+            for i in self.tokens.iter_mut() {
+                i.freq = (max_weight as f32 * (i.freq as f32) / (max_tok_weight as f32)).ceil() as u32;
+            }
+        }
+    }
+
 }
 
 pub fn read_queries<P: AsRef<std::path::Path> + std::fmt::Debug>(
     qry_file: P,
+    weighted: bool,
 ) -> anyhow::Result<Vec<Query>> {
     let qry_file = std::fs::File::open(qry_file)?;
     let qry_file = std::io::BufReader::new(qry_file);
-    let queries = qry_file
+    let mut queries:Vec<Query> = qry_file
         .lines()
         .filter_map(|l| l.ok())
         .filter_map(|l| l.parse::<Query>().ok())
         .collect();
+
+    // Check for overflows or Re-scale to max range
+    for query in &mut queries {
+        if weighted {
+            query.rescale(MAX_TERM_WEIGHT);
+        } else {
+            let max_tok_weight = query.tokens.iter().map(|p| p.freq).max().unwrap() as usize;
+            if max_tok_weight > MAX_TERM_WEIGHT {
+                eprintln!("WARN: Query weight {} > max permitted value {}. Rescaling all term weights to 1.", max_tok_weight, MAX_TERM_WEIGHT);
+                eprintln!("WARN: Did you mean to use --weighted?");
+                query.rescale(1);
+            }
+        }
+    }
+
     Ok(queries)
 }
 

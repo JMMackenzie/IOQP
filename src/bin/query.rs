@@ -59,12 +59,15 @@ struct Args {
     /// Number of warmup queries
     #[structopt(long)]
     warmup_num: Option<usize>,
+    /// Whether or not to obey query weights
+    #[structopt(long)]
+    weighted: bool,
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Args::from_args();
 
-    let qrys = ioqp::query::read_queries(args.queries)?;
+    let qrys = ioqp::query::read_queries(args.queries, args.weighted)?;
 
     let index = ioqp::Index::<ioqp::SimdBPandStreamVbyte>::read_from_file(args.index)?;
 

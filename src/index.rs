@@ -25,7 +25,7 @@ use crate::search::SearchScratch;
 use crate::util;
 use crate::ScoreType;
 use crate::SearchResults;
-use crate::query::{MAX_QUERY_WEIGHT, Term};
+use crate::query::{MAX_TERM_WEIGHT, Term};
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct Index<C: crate::compress::Compressor> {
@@ -36,7 +36,7 @@ pub struct Index<C: crate::compress::Compressor> {
     num_levels: usize,
     max_level: usize,
     max_doc_id: u32,
-    max_query_weight: usize,
+    max_term_weight: usize,
     num_postings: usize,
     impact_type: std::marker::PhantomData<C>,
     #[serde(skip)]
@@ -171,7 +171,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let max_level = uniq_levels.into_iter().max().unwrap() as usize;
         let search_bufs = parking_lot::Mutex::new(
             (0..2048)
-                .map(|_| search::SearchScratch::from_index(max_level, MAX_QUERY_WEIGHT, max_doc_id))
+                .map(|_| search::SearchScratch::from_index(max_level, MAX_TERM_WEIGHT, max_doc_id))
                 .collect(),
         );
 
@@ -182,7 +182,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             num_levels,
             max_level,
             max_doc_id,
-            max_query_weight: MAX_QUERY_WEIGHT,
+            max_term_weight: MAX_TERM_WEIGHT,
             num_postings,
             impact_type: std::marker::PhantomData,
             search_bufs,
@@ -259,7 +259,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let max_level = uniq_levels.into_iter().max().unwrap() as usize;
         let search_bufs = parking_lot::Mutex::new(
             (0..2048)
-                .map(|_| search::SearchScratch::from_index(max_level, MAX_QUERY_WEIGHT, max_doc_id))
+                .map(|_| search::SearchScratch::from_index(max_level, MAX_TERM_WEIGHT, max_doc_id))
                 .collect(),
         );
 
@@ -270,7 +270,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             num_levels,
             max_level,
             max_doc_id,
-            max_query_weight: MAX_QUERY_WEIGHT,
+            max_term_weight: MAX_TERM_WEIGHT,
             num_postings,
             impact_type: std::marker::PhantomData,
             search_bufs,
@@ -477,7 +477,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
 
         let mut search_buf =
             self.search_bufs.lock().pop().unwrap_or_else(|| {
-                search::SearchScratch::from_index(self.max_level, self.max_query_weight, self.max_doc_id)
+                search::SearchScratch::from_index(self.max_level, self.max_term_weight, self.max_doc_id)
             });
 
         let total_postings = self.determine_impact_segments(&mut search_buf, tokens);
@@ -504,7 +504,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
 
         let mut search_buf =
             self.search_bufs.lock().pop().unwrap_or_else(|| {
-                search::SearchScratch::from_index(self.max_level, self.max_query_weight, self.max_doc_id)
+                search::SearchScratch::from_index(self.max_level, self.max_term_weight, self.max_doc_id)
             });
 
         self.determine_impact_segments(&mut search_buf, tokens);
