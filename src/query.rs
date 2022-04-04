@@ -1,6 +1,5 @@
 use std::io::BufRead;
 use std::collections::HashMap;
-use std::process;
 
 pub const MAX_TERM_WEIGHT:usize = 32;
 
