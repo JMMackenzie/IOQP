@@ -64,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
             "/search",
             post({
                 let index = Arc::clone(&index);
-                move |body| saerch_post(body, Arc::clone(&index))
+                move |body| search_post(body, Arc::clone(&index))
             }),
         )
         .route(
@@ -83,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn saerch_post(
+async fn search_post(
     Json(query): Json<QueryPayLoad>,
     index: Arc<IndexType>,
 ) -> Result<Json<ioqp::SearchResults>, ServeError> {
