@@ -518,4 +518,14 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             qid: query_id.unwrap_or_default(),
         }
     }
+
+    pub fn query_warmup(&self, tokens: &[Term]) {
+        let postings_budget = 0;
+        let mut search_buf = self.search_bufs.lock().pop().unwrap_or_else(|| {
+            search::SearchScratch::from_index(self.max_level, self.max_term_weight, self.max_doc_id)
+        });
+        self.determine_impact_segments(&mut search_buf, tokens);
+        self.process_impact_segments(&mut search_buf, postings_budget);
+        self.search_bufs.lock().push(search_buf);
+    }
 }
