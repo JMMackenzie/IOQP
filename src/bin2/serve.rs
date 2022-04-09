@@ -86,15 +86,13 @@ async fn main() -> anyhow::Result<()> {
 async fn search_post(
     Json(query): Json<QueryPayLoad>,
     index: Arc<IndexType>,
-) -> Result<Json<ioqp::SearchResults>, ServeError> {
-    let result = tokio::task::spawn_blocking(move || {
-        match query.query_mode {
-            QueryMode::Fraction(rho) => {
-                index.query_fraction(&query.query.tokens, rho, None, query.k.get())
-            }
-            QueryMode::Fixed(postings_budget) => {
-                index.query_fixed(&query.query.tokens, postings_budget, None, query.k.get())
-            }
+) -> Result<Json<ioqp::Results>, ServeError> {
+    let result = tokio::task::spawn_blocking(move || match query.query_mode {
+        QueryMode::Fraction(rho) => {
+            index.query_fraction(&query.query.tokens, rho, None, query.k.get())
+        }
+        QueryMode::Fixed(postings_budget) => {
+            index.query_fixed(&query.query.tokens, postings_budget, None, query.k.get())
         }
     })
     .await
@@ -106,16 +104,14 @@ async fn search_post(
 async fn search(
     query: Query<QueryPayLoad>,
     index: Arc<IndexType>,
-) -> Result<Json<ioqp::SearchResults>, ServeError> {
+) -> Result<Json<ioqp::Results>, ServeError> {
     let query: QueryPayLoad = query.0;
-    let result = tokio::task::spawn_blocking(move || {
-        match query.query_mode {
-            QueryMode::Fraction(rho) => {
-                index.query_fraction(&query.query.tokens, rho, None, query.k.get())
-            }
-            QueryMode::Fixed(postings_budget) => {
-                index.query_fixed(&query.query.tokens, postings_budget, None, query.k.get())
-            }
+    let result = tokio::task::spawn_blocking(move || match query.query_mode {
+        QueryMode::Fraction(rho) => {
+            index.query_fraction(&query.query.tokens, rho, None, query.k.get())
+        }
+        QueryMode::Fixed(postings_budget) => {
+            index.query_fixed(&query.query.tokens, postings_budget, None, query.k.get())
         }
     })
     .await

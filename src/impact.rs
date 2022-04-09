@@ -11,20 +11,23 @@ pub struct MetaData {
 pub struct Impact {
     pub meta_data: MetaData,
     pub remaining_u32s: usize,
-    pub bytes: range::ByteRange,
+    pub bytes: range::Byte,
     pub initial: u32,
 }
 
 impl Impact {
+    #[must_use]
     pub fn count(&self) -> u32 {
         self.meta_data.count
     }
 
+    #[must_use]
     pub fn impact(&self) -> u16 {
         self.meta_data.impact
     }
 
-    pub fn from_encoded_slice(meta_data: MetaData, bytes: range::ByteRange) -> Impact {
+    #[must_use]
+    pub fn from_encoded_slice(meta_data: MetaData, bytes: range::Byte) -> Impact {
         Impact {
             remaining_u32s: meta_data.count as usize,
             meta_data,
@@ -33,15 +36,25 @@ impl Impact {
         }
     }
 
-    pub fn from_encoded_slice_weighted(meta_data: MetaData, bytes: range::ByteRange, query_weight:u16) -> Impact {
+    #[must_use]
+    pub fn from_encoded_slice_weighted(
+        meta_data: MetaData,
+        bytes: range::Byte,
+        query_weight: u16,
+    ) -> Impact {
         Impact {
             remaining_u32s: meta_data.count as usize,
-            meta_data: MetaData { impact: meta_data.impact * query_weight, count: meta_data.count, bytes: meta_data.bytes },
+            meta_data: MetaData {
+                impact: meta_data.impact * query_weight,
+                count: meta_data.count,
+                bytes: meta_data.bytes,
+            },
             initial: 0,
             bytes,
         }
     }
 
+    #[must_use]
     pub fn encode<Compressor: crate::compress::Compressor>(
         impact: u16,
         docs: &[u32],
@@ -135,7 +148,7 @@ impl Impact {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::range::ByteRange;
+    use crate::range::Byte;
 
     use super::*;
 
@@ -167,7 +180,7 @@ pub mod tests {
 
         let data = &encoded[..];
         let mut decode_buf = [0u32; compress::BLOCK_LEN];
-        let mut recovered = Impact::from_encoded_slice(meta_data, ByteRange::from_slice(data));
+        let mut recovered = Impact::from_encoded_slice(meta_data, Byte::from_slice(data));
         let mut doc_iter = docs.into_iter();
         while let Some(chunk) =
             recovered.next_chunk::<crate::compress::SimdBPandStreamVbyte>(data, &mut decode_buf)
@@ -224,7 +237,7 @@ pub mod tests {
             Impact::encode::<crate::compress::SimdBPandStreamVbyte>(impact, &docs);
         let data = &encoded[..];
         let mut decode_buf = [0u32; compress::BLOCK_LEN];
-        let mut recovered = Impact::from_encoded_slice(meta_data, ByteRange::from_slice(data));
+        let mut recovered = Impact::from_encoded_slice(meta_data, Byte::from_slice(data));
         let mut doc_iter = docs.into_iter();
         let mut all_good = true;
         while let Some(chunk) =

@@ -17,15 +17,12 @@ use std::cmp::Reverse;
 use crate::ciff;
 use crate::impact;
 use crate::list;
-use crate::range::ByteRange;
-use crate::result::SearchResult;
+use crate::query::{Term, MAX_TERM_WEIGHT};
+use crate::range::Byte;
 use crate::score;
 use crate::search;
-use crate::search::SearchScratch;
 use crate::util;
 use crate::ScoreType;
-use crate::SearchResults;
-use crate::query::{MAX_TERM_WEIGHT, Term};
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct Index<C: crate::compress::Compressor> {
@@ -40,10 +37,14 @@ pub struct Index<C: crate::compress::Compressor> {
     num_postings: usize,
     impact_type: std::marker::PhantomData<C>,
     #[serde(skip)]
-    search_bufs: parking_lot::Mutex<Vec<search::SearchScratch>>,
+    search_bufs: parking_lot::Mutex<Vec<search::Scratch>>,
 }
 
 impl<Compressor: crate::compress::Compressor> Index<Compressor> {
+    /// Creates index from ciff file, quantziing it first
+    ///
+    /// # Errors
+    /// - Can't open ciff file
     pub fn quantize_from_ciff_file<P: AsRef<std::path::Path> + std::fmt::Debug>(
         input_file_name: P,
         quant_bits: u32,
@@ -66,7 +67,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         // (1) Iterate the CIFF data and build the temporary index
         loop {
             match ciff_reader.next() {
-                Some(ciff::CiffRecord::PostingsList(plist)) => {
+                Some(ciff::Record::PostingsList(plist)) => {
                     pb_plist.inc(1);
                     let mut t_plist = Vec::new();
                     let term = plist.get_term().to_string();
@@ -82,13 +83,13 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                     }
                     temp_idx.push(t_plist);
                 }
-                Some(ciff::CiffRecord::Document {
+                Some(ciff::Record::Document {
                     external_id,
                     length,
                     ..
                 }) => {
                     docmap.push(external_id);
-                    temp_doclen.push(length as f64 / avg_doclen);
+                    temp_doclen.push(f64::from(length) / avg_doclen);
                 }
                 None => break,
             }
@@ -171,7 +172,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let max_level = uniq_levels.into_iter().max().unwrap() as usize;
         let search_bufs = parking_lot::Mutex::new(
             (0..2048)
-                .map(|_| search::SearchScratch::from_index(max_level, MAX_TERM_WEIGHT, max_doc_id))
+                .map(|_| search::Scratch::from_index(max_level, MAX_TERM_WEIGHT, max_doc_id))
                 .collect(),
         );
 
@@ -205,7 +206,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         // Iterate the CIFF data and build the index
         loop {
             match ciff_reader.next() {
-                Some(ciff::CiffRecord::PostingsList(plist)) => {
+                Some(ciff::Record::PostingsList(plist)) => {
                     pb_plist.inc(1);
                     let term = plist.get_term().to_string();
                     let postings = plist.get_postings();
@@ -226,7 +227,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                         .collect();
                     all_postings.push((term, final_postings));
                 }
-                Some(ciff::CiffRecord::Document { external_id, .. }) => {
+                Some(ciff::Record::Document { external_id, .. }) => {
                     docmap.push(external_id);
                 }
                 None => break,
@@ -246,7 +247,8 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         }
 
         let pb_write = util::progress_bar("create index", encoded_data.len());
-        let mut vocab: HashMap<_, _, BuildHasherDefault<XxHash64>> = Default::default();
+        let mut vocab: HashMap<_, _, BuildHasherDefault<XxHash64>> =
+            std::collections::HashMap::default();
         let mut list_data =
             Vec::with_capacity(encoded_data.iter().map(|(_, (_, data))| data.len()).sum());
         for (term, (mut list, term_data)) in encoded_data.into_iter().progress_with(pb_write) {
@@ -259,7 +261,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let max_level = uniq_levels.into_iter().max().unwrap() as usize;
         let search_bufs = parking_lot::Mutex::new(
             (0..2048)
-                .map(|_| search::SearchScratch::from_index(max_level, MAX_TERM_WEIGHT, max_doc_id))
+                .map(|_| search::Scratch::from_index(max_level, MAX_TERM_WEIGHT, max_doc_id))
                 .collect(),
         );
 
@@ -320,13 +322,9 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         &self.docmap
     }
 
-    fn determine_impact_segments( 
-        &self,
-        data: &mut SearchScratch,
-        tokens: &[Term],
-    ) -> usize {
+    fn determine_impact_segments(&self, data: &mut search::Scratch, tokens: &[Term]) -> usize {
         // determine what to decompress
-        data.impacts.iter_mut().for_each(|i| i.clear());
+        data.impacts.iter_mut().for_each(std::vec::Vec::clear);
         tokens
             .iter()
             .filter_map(|tok| match self.impact_list(&tok.token) {
@@ -340,8 +338,8 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                                 data.impacts[ti.impact as usize * tok.freq as usize].push(
                                     impact::Impact::from_encoded_slice_weighted(
                                         *ti,
-                                        ByteRange::new(start, stop),
-                                        tok.freq as u16
+                                        Byte::new(start, stop),
+                                        tok.freq as u16,
                                     ),
                                 );
                                 start += ti.bytes as usize;
@@ -358,7 +356,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             .sum::<u32>() as usize
     }
 
-    fn process_impact_segments(&self, data: &mut SearchScratch, mut postings_budget: i64) {
+    fn process_impact_segments(&self, data: &mut search::Scratch, mut postings_budget: i64) {
         data.accumulators.iter_mut().for_each(|x| *x = 0);
         let impact_iter = data.impacts.iter_mut().rev().flat_map(|i| i.iter_mut());
         for impact_group in impact_iter {
@@ -389,14 +387,14 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         }
     }
 
-    fn determine_topk(&self, data: &mut SearchScratch, k: usize) -> Vec<SearchResult> {
+    fn determine_topk(&self, data: &mut search::Scratch, k: usize) -> Vec<search::Result> {
         let mut heap = BinaryHeap::with_capacity(k + 1);
         let block_offset = k;
         data.accumulators[..k]
             .iter()
             .enumerate()
             .for_each(|(doc_id, score)| {
-                heap.push(SearchResult {
+                heap.push(search::Result {
                     doc_id: doc_id as u32,
                     score: *score,
                 });
@@ -407,7 +405,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             .for_each(|(doc_id, &score)| {
                 let top = heap.peek().unwrap();
                 if top.score < score {
-                    heap.push(SearchResult {
+                    heap.push(search::Result {
                         doc_id: (doc_id + block_offset) as u32,
                         score,
                     });
@@ -417,7 +415,8 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         heap.into_sorted_vec()
     }
 
-    fn determine_topk_chunks(&self, data: &mut SearchScratch, k: usize) -> Vec<SearchResult> {
+    fn determine_topk_chunks(&self, data: &mut search::Scratch, k: usize) -> Vec<search::Result> {
+        const CHUNK_SIZE: u32 = 2048;
         let heap = &mut data.heap;
         let accumulators = &mut data.accumulators;
 
@@ -427,13 +426,11 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             .iter()
             .enumerate()
             .for_each(|(doc_id, score)| {
-                heap.push(SearchResult {
+                heap.push(search::Result {
                     doc_id: doc_id as u32,
                     score: *score,
                 });
             });
-
-        const CHUNK_SIZE: u32 = 2048;
 
         let mut doc_id = 0;
         accumulators[k..]
@@ -442,17 +439,17 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                 let threshold = heap.peek().unwrap().score;
                 let max_or_thres = crate::util::determine_max(scores, threshold);
                 if max_or_thres > threshold {
-                    scores.iter().for_each(|&score| {
+                    for &score in scores.iter() {
                         let top = heap.peek().unwrap();
                         if top.score < score {
-                            heap.push(SearchResult {
+                            heap.push(search::Result {
                                 doc_id: (doc_id + block_offset as u32),
                                 score,
                             });
                             heap.pop();
                         }
                         doc_id += 1;
-                    });
+                    }
                 } else {
                     doc_id += CHUNK_SIZE;
                 }
@@ -472,13 +469,12 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         rho: f32,
         query_id: Option<usize>,
         k: usize,
-    ) -> SearchResults {
+    ) -> search::Results {
         let start = std::time::Instant::now();
 
-        let mut search_buf =
-            self.search_bufs.lock().pop().unwrap_or_else(|| {
-                search::SearchScratch::from_index(self.max_level, self.max_term_weight, self.max_doc_id)
-            });
+        let mut search_buf = self.search_bufs.lock().pop().unwrap_or_else(|| {
+            search::Scratch::from_index(self.max_level, self.max_term_weight, self.max_doc_id)
+        });
 
         let total_postings = self.determine_impact_segments(&mut search_buf, tokens);
         let postings_budget = (total_postings as f32 * rho).ceil() as i64;
@@ -486,7 +482,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let topk = self.determine_topk(&mut search_buf, k);
 
         self.search_bufs.lock().push(search_buf);
-        SearchResults {
+        search::Results {
             topk,
             took: start.elapsed(),
             qid: query_id.unwrap_or_default(),
@@ -499,20 +495,19 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         postings_budget: i64,
         query_id: Option<usize>,
         k: usize,
-    ) -> SearchResults {
+    ) -> search::Results {
         let start = std::time::Instant::now();
 
-        let mut search_buf =
-            self.search_bufs.lock().pop().unwrap_or_else(|| {
-                search::SearchScratch::from_index(self.max_level, self.max_term_weight, self.max_doc_id)
-            });
+        let mut search_buf = self.search_bufs.lock().pop().unwrap_or_else(|| {
+            search::Scratch::from_index(self.max_level, self.max_term_weight, self.max_doc_id)
+        });
 
         self.determine_impact_segments(&mut search_buf, tokens);
         self.process_impact_segments(&mut search_buf, postings_budget);
         let topk = self.determine_topk_chunks(&mut search_buf, k);
 
         self.search_bufs.lock().push(search_buf);
-        SearchResults {
+        search::Results {
             topk,
             took: start.elapsed(),
             qid: query_id.unwrap_or_default(),
@@ -522,7 +517,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
     pub fn query_warmup(&self, tokens: &[Term]) {
         let postings_budget = 0;
         let mut search_buf = self.search_bufs.lock().pop().unwrap_or_else(|| {
-            search::SearchScratch::from_index(self.max_level, self.max_term_weight, self.max_doc_id)
+            search::Scratch::from_index(self.max_level, self.max_term_weight, self.max_doc_id)
         });
         self.determine_impact_segments(&mut search_buf, tokens);
         self.process_impact_segments(&mut search_buf, postings_budget);

@@ -1,6 +1,6 @@
 pub mod proto;
 
-pub enum CiffRecord {
+pub enum Record {
     PostingsList(proto::PostingsList),
     Document {
         doc_id: u32,
@@ -17,7 +17,6 @@ pub struct Reader<'a> {
     postings_left: usize,
     docs_left: usize,
 }
-
 
 impl<'a> Reader<'a> {
     pub fn new<T: 'a + std::io::BufRead + std::fmt::Debug>(
@@ -42,9 +41,7 @@ impl<'a> Reader<'a> {
     pub fn average_doclength(&self) -> f64 {
         self.avg_doclen
     }
-
 }
-
 
 impl<'a> ExactSizeIterator for Reader<'a> {
     fn len(&self) -> usize {
@@ -52,16 +49,14 @@ impl<'a> ExactSizeIterator for Reader<'a> {
     }
 }
 
-
-
 impl<'a> Iterator for Reader<'a> {
-    type Item = CiffRecord;
+    type Item = Record;
 
-    fn next(&mut self) -> Option<CiffRecord> {
+    fn next(&mut self) -> Option<Record> {
         if self.postings_left != 0 {
             self.postings_left -= 1;
             return match self.input.read_message::<proto::PostingsList>() {
-                Ok(record) => Some(CiffRecord::PostingsList(record)),
+                Ok(record) => Some(Record::PostingsList(record)),
                 Err(e) => {
                     println!("Error parsing CIFF postingslist: {}", e);
                     None
@@ -72,7 +67,7 @@ impl<'a> Iterator for Reader<'a> {
             self.docs_left -= 1;
             return match self.input.read_message::<proto::DocRecord>() {
                 Ok(record) => {
-                    Some(CiffRecord::Document {
+                    Some(Record::Document {
                         doc_id: record.get_docid() as u32, // todo fix this...
                         external_id: record.get_collection_docid().to_string(),
                         length: record.get_doclength() as u32, // todo fix this...
@@ -86,5 +81,4 @@ impl<'a> Iterator for Reader<'a> {
         }
         None
     }
-
 }

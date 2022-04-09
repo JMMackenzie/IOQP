@@ -1,5 +1,6 @@
 use crate::ScoreType;
 
+#[must_use]
 pub fn progress_bar(name: &str, limit: usize) -> indicatif::ProgressBar {
     let pb = indicatif::ProgressBar::new(limit as u64);
     pb.set_draw_delta(limit as u64 / 200);
@@ -14,8 +15,9 @@ pub fn progress_bar(name: &str, limit: usize) -> indicatif::ProgressBar {
 /// # Safety
 ///
 /// this works hopefully
-pub unsafe fn _determine_max_i16(scores: &[i16], threshold: i16) -> i16 {
-    use std::arch::x86_64::*;
+#[must_use]
+pub(crate) unsafe fn _determine_max_i16(scores: &[i16], threshold: i16) -> i16 {
+    use std::arch::x86_64::{__m256i, _mm256_loadu_epi16, _mm256_max_epi16, _mm256_set1_epi16};
     union SimdToArray {
         array: [i16; 16],
         simd: __m256i,
@@ -54,14 +56,8 @@ pub unsafe fn _determine_max_i16(scores: &[i16], threshold: i16) -> i16 {
     *threshold.array.iter().max().unwrap()
 }
 
-// Simple max finding via cloned
-pub fn determine_max(scores: &[ScoreType], threshold: ScoreType) -> ScoreType {
-    scores.iter().cloned().max().unwrap().max(threshold)
+// Simple max finding via copied
+#[must_use]
+pub(crate) fn determine_max(scores: &[ScoreType], threshold: ScoreType) -> ScoreType {
+    scores.iter().copied().max().unwrap().max(threshold)
 }
-
-// Simple max finding in place
-pub fn determine_max_simple(scores: &[ScoreType], threshold: ScoreType) -> ScoreType {
-    *scores.iter().max().unwrap().max(&threshold)
-}
-
-

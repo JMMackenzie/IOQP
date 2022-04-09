@@ -1,4 +1,3 @@
-
 #[derive(Clone, Copy)]
 pub struct BM25 {
     k1: f32,
@@ -7,18 +6,13 @@ pub struct BM25 {
 }
 
 impl BM25 {
-
-    pub fn new (k1: f32, b: f32, num_docs: u32) -> BM25 {
-        BM25 {
-            k1,
-            b,
-            num_docs,
-        }
+    pub fn new(k1: f32, b: f32, num_docs: u32) -> BM25 {
+        BM25 { k1, b, num_docs }
     }
 
     fn term_idf(self, doc_freq: u32) -> f32 {
         let u_idf = (((self.num_docs - doc_freq) as f32 + 0.5) / ((doc_freq as f32) + 0.5)).ln();
-        u_idf.max(1.0E-6 as f32) * (1.0 + self.k1)
+        u_idf.max(1.0E-6_f32) * (1.0 + self.k1)
     }
 
     fn doc_term_weight(self, term_freq: u32, norm_doc_len: f32) -> f32 {
@@ -31,7 +25,6 @@ impl BM25 {
     }
 }
 
-
 #[derive(Clone, Copy)]
 pub struct LinearQuantizer {
     global_max: f32,
@@ -39,7 +32,6 @@ pub struct LinearQuantizer {
 }
 
 impl LinearQuantizer {
-
     pub fn new(global_max: f32, quant_bits: u32) -> LinearQuantizer {
         LinearQuantizer {
             global_max,
