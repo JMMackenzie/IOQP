@@ -56,7 +56,7 @@ pub unsafe fn _determine_max_i16(scores: &[i16], threshold: i16) -> i16 {
     *threshold.array.iter().max().unwrap()
 }
 
-// Simple max finding via copied
+// // Simple max finding via copied
 #[must_use]
 pub(crate) fn determine_max(scores: &[ScoreType], threshold: ScoreType) -> ScoreType {
     scores.iter().copied().max().unwrap().max(threshold)

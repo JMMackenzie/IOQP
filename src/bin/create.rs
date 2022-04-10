@@ -27,9 +27,22 @@ fn main() -> anyhow::Result<()> {
     let args = Args::from_args();
 
     let index = if args.quantize {
-        ioqp::Index::<ioqp::SimdBPandStreamVbyte>::quantize_from_ciff_file(args.input, args.quant_bits, args.bm25_k1, args.bm25_b)
+        let scorer = ioqp::score::BM25::new(args.bm25_k1, args.bm25_b);
+        ioqp::Index::<ioqp::SimdBPandStreamVbyte>::from_ciff_file(
+            args.input,
+            args.quant_bits,
+            scorer,
+        )
     } else {
-         ioqp::Index::<ioqp::SimdBPandStreamVbyte>::from_ciff_file(args.input)
+        let scorer = ioqp::score::Identity::new();
+        ioqp::Index::<ioqp::SimdBPandStreamVbyte>::from_ciff_file(
+            args.input,
+            args.quant_bits,
+            scorer,
+        )
     }?;
-    index.write_to_file(args.output)
+
+    index.write_to_file(args.output)?;
+
+    Ok(())
 }

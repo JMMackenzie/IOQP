@@ -1,3 +1,4 @@
+use rayon::iter::ParallelBridge;
 use std::collections::BTreeMap;
 use std::collections::BinaryHeap;
 use std::collections::HashMap;
@@ -7,10 +8,7 @@ use twox_hash::XxHash64;
 
 use indicatif::ParallelProgressIterator;
 use indicatif::ProgressIterator;
-use rayon::iter::IndexedParallelIterator;
-use rayon::iter::IntoParallelIterator;
 use rayon::iter::IntoParallelRefIterator;
-use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::ParallelIterator;
 use std::cmp::Reverse;
 
@@ -45,113 +43,89 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
     ///
     /// # Errors
     /// - Can't open ciff file
-    pub fn quantize_from_ciff_file<P: AsRef<std::path::Path> + std::fmt::Debug>(
+    pub fn from_ciff_file<P: AsRef<std::path::Path> + std::fmt::Debug>(
         input_file_name: P,
         quant_bits: u32,
-        bm25_k1: f32,
-        bm25_b: f32,
+        scorer: impl score::Scorer,
     ) -> anyhow::Result<Self> {
-        let ciff_file = std::fs::File::open(input_file_name)?;
-        let mut ciff_file = std::io::BufReader::new(ciff_file);
-        let mut ciff_reader = ciff::Reader::new(&mut ciff_file)?;
-        let pb_plist = util::progress_bar("read ciff", ciff_reader.num_postings_lists());
-        let avg_doclen = ciff_reader.average_doclength();
-        let mut num_postings = 0;
-        let mut max_doc_id = 0;
+        let ciff_reader = ciff::Reader::from_file(input_file_name)?;
+        let pb_plist = util::progress_bar(
+            "determine docmap",
+            ciff_reader.header.num_postings_lists as usize,
+        );
+        let avg_doclen = ciff_reader.header.average_doclength;
+        let num_plists = ciff_reader.header.num_postings_lists as usize;
+        let num_postings = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let mut docmap = Vec::new();
+        let mut doclen = Vec::new();
 
-        let mut temp_idx = Vec::new();
-        let mut temp_lexicon = Vec::new();
-        let mut temp_doclen = Vec::new();
-
-        // (1) Iterate the CIFF data and build the temporary index
-        loop {
-            match ciff_reader.next() {
-                Some(ciff::Record::PostingsList(plist)) => {
-                    pb_plist.inc(1);
-                    let mut t_plist = Vec::new();
-                    let term = plist.get_term().to_string();
-                    temp_lexicon.push(term);
-                    let postings = plist.get_postings();
-                    let mut doc_id: u32 = 0;
-                    for posting in postings {
-                        doc_id += posting.get_docid() as u32;
-                        max_doc_id = max_doc_id.max(doc_id);
-                        let tf = posting.get_tf() as f32; // Use f32 so we can overwrite later...
-                        t_plist.push((doc_id, tf));
-                        num_postings += 1;
-                    }
-                    temp_idx.push(t_plist);
-                }
-                Some(ciff::Record::Document {
-                    external_id,
-                    length,
-                    ..
-                }) => {
-                    docmap.push(external_id);
-                    temp_doclen.push(f64::from(length) / avg_doclen);
-                }
-                None => break,
-            }
+        // (1) Iterate the CIFF data and build the docmap
+        let mut max_doc_id = 0;
+        for doc_record in ciff_reader.doc_record_iter().progress_with(pb_plist) {
+            docmap.push(doc_record.collection_docid);
+            doclen.push(f64::from(doc_record.doclength) / avg_doclen);
+            max_doc_id = max_doc_id.max(doc_record.docid as u32);
         }
-        pb_plist.finish_and_clear();
+        let num_docs = doclen.len() as u32;
 
-        let pb_score = util::progress_bar("score postings", temp_idx.len());
-        // Init the scorer
-        let scorer = score::BM25::new(bm25_k1, bm25_b, max_doc_id);
-
-        // (2) We now have all postings as tuple pairs. Let's score/store them.
-        let max_score = temp_idx
-            .par_iter_mut()
+        // (2) Iterate the ciff data and score stuff
+        let pb_score = util::progress_bar("score postings", num_plists);
+        let max_score = ciff_reader
+            .plist_iter()
+            .par_bridge()
             .progress_with(pb_score)
             .map(|plist| {
-                let list_len = plist.len() as u32;
+                let list_len = plist.postings.len() as u32;
                 let mut max_score: f32 = 0.0;
-                for (docid, freq) in plist.iter_mut() {
-                    *freq =
-                        scorer.score(*freq as u32, list_len, temp_doclen[*docid as usize] as f32);
-                    max_score = max_score.max(*freq);
+                for ciff::Posting { docid, tf } in plist.postings.iter() {
+                    let score = scorer.score(
+                        *tf as u32,
+                        list_len,
+                        doclen[*docid as usize] as f32,
+                        num_docs,
+                    );
+                    max_score = max_score.max(score);
                 }
+                num_postings.fetch_add(plist.postings.len(), std::sync::atomic::Ordering::Relaxed);
                 ordered_float::OrderedFloat(max_score)
             })
             .max()
             .expect("max_score")
             .into_inner();
 
-        let pb_quantizer = util::progress_bar("quantize postings", temp_idx.len());
-
-        // (3) We now have the index-wide max_score, and the score for each impact
-        // Quantize and organize
+        // (3) We now have the index-wide max_score. we score again and quantize
         let quantizer = score::LinearQuantizer::new(max_score, quant_bits);
-
-        let all_postings: Vec<_> = temp_idx
-            .par_iter()
-            .enumerate()
+        let pb_quantizer = util::progress_bar("quantize/encode postings", num_plists);
+        let encoded_data: Vec<_> = ciff_reader
+            .plist_iter()
+            .par_bridge()
             .progress_with(pb_quantizer)
-            .map(|(idx, plist)| {
+            .map(|plist| {
                 let mut posting_map: BTreeMap<Reverse<u16>, Vec<u32>> = BTreeMap::new();
-                for (docid, score) in plist.iter() {
-                    let impact = quantizer.quantize(*score) as u16;
+                let list_len = plist.postings.len() as u32;
+                for ciff::Posting { docid, tf } in plist.postings.iter() {
+                    let freq = scorer.score(
+                        *tf as u32,
+                        list_len,
+                        doclen[*docid as usize] as f32,
+                        num_docs,
+                    );
+                    let impact = quantizer.quantize(freq) as u16;
                     let entry = posting_map.entry(Reverse(impact)).or_default();
-                    entry.push(*docid);
+                    entry.push(*docid as u32);
                 }
                 let final_postings: Vec<(u16, Vec<u32>)> = posting_map
                     .into_iter()
                     .map(|(impact, docs)| (impact.0, docs))
                     .collect();
-                (temp_lexicon[idx].clone(), final_postings)
+                let encoded_data = list::List::encode::<Compressor>(&final_postings);
+                (plist.term, encoded_data)
             })
             .collect();
-        let uniq_levels: HashSet<u16> = all_postings
-            .par_iter()
-            .flat_map(|pl| pl.1.par_iter().map(|l| l.0))
-            .collect();
 
-        let pb_encode = util::progress_bar("encode postings", all_postings.len());
-        let encoded_data: Vec<(String, (list::List, Vec<u8>))> = all_postings
-            .into_par_iter()
-            .progress_with(pb_encode)
-            .map(|(term, input)| (term, list::List::encode::<Compressor>(&input)))
+        let uniq_levels: HashSet<u16> = encoded_data
+            .par_iter()
+            .flat_map(|pl| pl.1 .0.impacts.par_iter().map(|l| l.impact))
             .collect();
 
         if docmap.len() != (max_doc_id + 1) as usize {
@@ -184,96 +158,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             max_level,
             max_doc_id,
             max_term_weight: MAX_TERM_WEIGHT,
-            num_postings,
-            impact_type: std::marker::PhantomData,
-            search_bufs,
-        })
-    }
-
-    pub fn from_ciff_file<P: AsRef<std::path::Path> + std::fmt::Debug>(
-        input_file_name: P,
-    ) -> anyhow::Result<Self> {
-        let ciff_file = std::fs::File::open(input_file_name)?;
-        let mut ciff_file = std::io::BufReader::new(ciff_file);
-        let mut ciff_reader = ciff::Reader::new(&mut ciff_file)?;
-        let pb_plist = util::progress_bar("read ciff", ciff_reader.num_postings_lists());
-        let mut all_postings = Vec::new();
-        let mut uniq_levels: HashSet<u16> = HashSet::new();
-        let mut num_postings = 0;
-        let mut max_doc_id = 0;
-        let mut docmap = Vec::new();
-
-        // Iterate the CIFF data and build the index
-        loop {
-            match ciff_reader.next() {
-                Some(ciff::Record::PostingsList(plist)) => {
-                    pb_plist.inc(1);
-                    let term = plist.get_term().to_string();
-                    let postings = plist.get_postings();
-                    let mut posting_map: BTreeMap<Reverse<u16>, Vec<u32>> = BTreeMap::new();
-                    let mut doc_id: u32 = 0;
-                    for posting in postings {
-                        doc_id += posting.get_docid() as u32;
-                        max_doc_id = max_doc_id.max(doc_id);
-                        let impact = posting.get_tf() as u16;
-                        let entry = posting_map.entry(Reverse(impact)).or_default();
-                        entry.push(doc_id);
-                        num_postings += 1;
-                    }
-                    uniq_levels.extend(posting_map.keys().map(|r| r.0));
-                    let final_postings: Vec<(u16, Vec<u32>)> = posting_map
-                        .into_iter()
-                        .map(|(impact, docs)| (impact.0, docs))
-                        .collect();
-                    all_postings.push((term, final_postings));
-                }
-                Some(ciff::Record::Document { external_id, .. }) => {
-                    docmap.push(external_id);
-                }
-                None => break,
-            }
-        }
-        pb_plist.finish_and_clear();
-
-        let pb_encode = util::progress_bar("encode postings", all_postings.len());
-        let encoded_data: Vec<(String, (list::List, Vec<u8>))> = all_postings
-            .into_par_iter()
-            .progress_with(pb_encode)
-            .map(|(term, input)| (term, list::List::encode::<Compressor>(&input)))
-            .collect();
-
-        if docmap.len() != (max_doc_id + 1) as usize {
-            anyhow::bail!("Document map length does not match the maximum document identifier. Is your CIFF file corrupt?");
-        }
-
-        let pb_write = util::progress_bar("create index", encoded_data.len());
-        let mut vocab: HashMap<_, _, BuildHasherDefault<XxHash64>> =
-            std::collections::HashMap::default();
-        let mut list_data =
-            Vec::with_capacity(encoded_data.iter().map(|(_, (_, data))| data.len()).sum());
-        for (term, (mut list, term_data)) in encoded_data.into_iter().progress_with(pb_write) {
-            list.start_byte_offset = list_data.len();
-            vocab.insert(term, list);
-            list_data.extend_from_slice(&term_data);
-        }
-
-        let num_levels = uniq_levels.len();
-        let max_level = uniq_levels.into_iter().max().unwrap() as usize;
-        let search_bufs = parking_lot::Mutex::new(
-            (0..2048)
-                .map(|_| search::Scratch::from_index(max_level, MAX_TERM_WEIGHT, max_doc_id))
-                .collect(),
-        );
-
-        Ok(Index {
-            docmap,
-            vocab,
-            list_data,
-            num_levels,
-            max_level,
-            max_doc_id,
-            max_term_weight: MAX_TERM_WEIGHT,
-            num_postings,
+            num_postings: num_postings.load(std::sync::atomic::Ordering::Relaxed),
             impact_type: std::marker::PhantomData,
             search_bufs,
         })

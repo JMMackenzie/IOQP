@@ -2,22 +2,22 @@
 #![feature(stdsimd)]
 
 //mod ciff;
-pub mod new_ciff;
-// pub mod compress;
-// pub mod impact;
-// mod index;
-// mod list;
-// pub mod query;
-// mod range;
-// mod score;
-// mod search;
-// pub mod util;
+pub mod ciff;
+pub mod compress;
+pub mod impact;
+mod index;
+mod list;
+pub mod query;
+mod range;
+pub mod score;
+mod search;
+pub mod util;
 
-// pub use compress::SimdBPandStreamVbyte;
-// pub use compress::Uncompressed;
-// pub use index::Index;
-// pub use range::Byte;
-// pub use search::Results;
+pub use compress::SimdBPandStreamVbyte;
+pub use compress::Uncompressed;
+pub use index::Index;
+pub use range::Byte;
+pub use search::Results;
 
 // // Configurable: The data type for accumulating scores.
-// type ScoreType = u16;
+type ScoreType = u16;
