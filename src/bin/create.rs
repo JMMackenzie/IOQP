@@ -47,7 +47,7 @@ fn main() -> anyhow::Result<()> {
         )
     }?;
     info!(
-        "Index creation time: {:.2} secs",
+        "index creation time: {:.2} secs",
         start.elapsed().as_secs_f64()
     );
 
@@ -55,7 +55,7 @@ fn main() -> anyhow::Result<()> {
     let start = std::time::Instant::now();
     index.write_to_file(args.output)?;
     info!(
-        "Index write time: {:.2} secs",
+        "index write time: {:.2} secs",
         start.elapsed().as_secs_f64()
     );
 
