@@ -140,7 +140,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         })
     }
 
-    /// Read IOQP index from file
+    /// Write IOQP index to file
     ///
     /// # Errors
     /// - fails if file can't be created
