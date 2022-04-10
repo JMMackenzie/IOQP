@@ -54,10 +54,8 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
     ) -> anyhow::Result<Self> {
         let ciff_reader = ciff::Reader::from_file(input_file_name)?;
 
-        let pb_plist = util::progress_bar(
-            "determine docmap",
-            ciff_reader.header.num_postings_lists as usize,
-        );
+        let pb_docmap =
+            util::progress_bar("determine docmap", ciff_reader.header.num_docs as usize);
         let avg_doclen = ciff_reader.header.average_doclength;
         let num_plists = ciff_reader.header.num_postings_lists as usize;
         let num_postings = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -66,7 +64,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
 
         info!("(1) Iterate the CIFF data and build the docmap");
         let mut max_doc_id = 0;
-        for doc_record in ciff_reader.doc_record_iter().progress_with(pb_plist) {
+        for doc_record in ciff_reader.doc_record_iter().progress_with(pb_docmap) {
             docmap.push(doc_record.collection_docid);
             doclen.push(f64::from(doc_record.doclength) / avg_doclen);
             max_doc_id = max_doc_id.max(doc_record.docid as u32);
@@ -106,7 +104,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             anyhow::bail!("Document map length does not match the maximum document identifier. Is your CIFF file corrupt?");
         }
 
-        info!("(5) Create final index structure");
+        info!("(5) Concateniate  final index structure");
         let pb_write = util::progress_bar("create index", encoded_data.len());
         let mut vocab: HashMap<_, _, BuildHasherDefault<XxHash64>> =
             std::collections::HashMap::default();
