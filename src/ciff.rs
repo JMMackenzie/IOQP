@@ -30,6 +30,7 @@ impl Reader {
         let num_plists = header.num_postings_lists as usize;
         let mut plist_data = Vec::with_capacity(num_plists);
         let mut doc_data = Vec::with_capacity(num_plists);
+        tracing::info!("parse ciff file to determine message offsets");
         let pb = crate::util::progress_bar(
             "determine msg positions",
             plist_data.capacity() + doc_data.capacity(),

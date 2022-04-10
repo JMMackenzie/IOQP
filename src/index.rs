@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::hash::BuildHasherDefault;
+use tracing::info;
 use twox_hash::XxHash64;
 
 use indicatif::ParallelProgressIterator;
@@ -52,6 +53,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         scorer: impl score::Scorer,
     ) -> anyhow::Result<Self> {
         let ciff_reader = ciff::Reader::from_file(input_file_name)?;
+
         let pb_plist = util::progress_bar(
             "determine docmap",
             ciff_reader.header.num_postings_lists as usize,
@@ -62,7 +64,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let mut docmap = Vec::new();
         let mut doclen = Vec::new();
 
-        // (1) Iterate the CIFF data and build the docmap
+        info!("(1) Iterate the CIFF data and build the docmap");
         let mut max_doc_id = 0;
         for doc_record in ciff_reader.doc_record_iter().progress_with(pb_plist) {
             docmap.push(doc_record.collection_docid);
@@ -71,7 +73,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         }
         let num_docs = doclen.len() as u32;
 
-        // (2) Iterate the ciff data and score stuff to determine max score
+        info!("(2) Iterate the CIFF data and score stuff to determine max score");
         let max_score = determine_max_score(
             num_plists,
             &ciff_reader,
@@ -81,7 +83,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             &num_postings,
         );
 
-        // (3) We now have the index-wide max_score. we score again and quantize
+        info!("(3) We now have the index-wide max_score. Iterate the CIFF data again score + quantize + encode");
         let encoded_data = Self::quantize_and_encode(
             max_score,
             quant_bits,
@@ -92,8 +94,11 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             num_docs,
         );
 
+        info!("(4) Determine uniq impact levels ");
+        let pb_uniq_lvls = util::progress_bar("create index", encoded_data.len());
         let uniq_levels: HashSet<u16> = encoded_data
             .par_iter()
+            .progress_with(pb_uniq_lvls)
             .flat_map(|pl| pl.1 .0.impacts.par_iter().map(|l| l.impact))
             .collect();
 
@@ -101,6 +106,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             anyhow::bail!("Document map length does not match the maximum document identifier. Is your CIFF file corrupt?");
         }
 
+        info!("(5) Create final index structure");
         let pb_write = util::progress_bar("create index", encoded_data.len());
         let mut vocab: HashMap<_, _, BuildHasherDefault<XxHash64>> =
             std::collections::HashMap::default();
@@ -112,6 +118,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             list_data.extend_from_slice(&term_data);
         }
 
+        info!("(6) Instantiate search objects");
         let num_levels = uniq_levels.len();
         let max_level = uniq_levels.into_iter().max().unwrap() as usize;
         let search_bufs = parking_lot::Mutex::new(
@@ -120,6 +127,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                 .collect(),
         );
 
+        info!("(7) Create final index object");
         Ok(Index {
             docmap,
             vocab,
