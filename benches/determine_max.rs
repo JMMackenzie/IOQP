@@ -47,21 +47,21 @@ fn bench_decode_impacts(c: &mut Criterion) {
         BenchmarkId::new("determine_max_avx2", num_scores),
         &scores,
         |b, s| {
-            b.iter(|| determine_max_avx2(&s, 10));
+            b.iter(|| determine_max_avx2(s, 10));
         },
     );
     group.bench_with_input(
         BenchmarkId::new("determine_max_simple", num_scores),
         &scores,
         |b, s| {
-            b.iter(|| determine_max_simple(&s, 10));
+            b.iter(|| determine_max_simple(s, 10));
         },
     );
     group.bench_with_input(
         BenchmarkId::new("determine_max_simple_cloned", num_scores),
         &scores,
         |b, s| {
-            b.iter(|| determine_max_simple_cloned(&s, 10));
+            b.iter(|| determine_max_simple_cloned(s, 10));
         },
     );
     group.finish();

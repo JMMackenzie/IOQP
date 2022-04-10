@@ -1,3 +1,4 @@
+use std::borrow::ToOwned;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::io::BufRead;
@@ -8,6 +9,12 @@ pub const MAX_TERM_WEIGHT: usize = 32;
 pub struct Term {
     pub token: String,
     pub freq: u32,
+}
+
+impl std::fmt::Display for Term {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(tok:{}, freq:{})", &self.token, self.freq)
+    }
 }
 
 impl PartialEq for Term {
@@ -39,7 +46,7 @@ impl std::str::FromStr for Query {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split(':').collect();
         let id = parts[0].parse::<usize>()?;
-        let terms: Vec<String> = parts[1].split_whitespace().map(|s| s.to_owned()).collect();
+        let terms: Vec<String> = parts[1].split_whitespace().map(ToOwned::to_owned).collect();
         let mut token_freqs: HashMap<String, u32> = HashMap::new();
         for t in &terms {
             *token_freqs.entry(t.to_string()).or_insert(0) += 1;

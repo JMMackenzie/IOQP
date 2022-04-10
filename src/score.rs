@@ -11,6 +11,7 @@ pub struct BM25 {
 }
 
 impl BM25 {
+    #[must_use]
     pub fn new(k1: f32, b: f32) -> BM25 {
         BM25 { k1, b }
     }
@@ -36,8 +37,15 @@ impl Scorer for BM25 {
 pub struct Identity {}
 
 impl Identity {
+    #[must_use]
     pub fn new() -> Identity {
         Identity {}
+    }
+}
+
+impl Default for Identity {
+    fn default() -> Self {
+        Identity::new()
     }
 }
 
@@ -54,6 +62,7 @@ pub struct LinearQuantizer {
 }
 
 impl LinearQuantizer {
+    #[must_use]
     pub fn new(global_max: f32, quant_bits: u32) -> LinearQuantizer {
         LinearQuantizer {
             global_max,
@@ -61,6 +70,11 @@ impl LinearQuantizer {
         }
     }
 
+    /// Quantize the score
+    ///
+    /// # Panics
+    /// Panics is score is outside 0 <= score <= global max
+    #[must_use]
     pub fn quantize(self, score: f32) -> u32 {
         assert!(score >= 0_f32 && score <= self.global_max);
         (score * self.scale).ceil() as u32

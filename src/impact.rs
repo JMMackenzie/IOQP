@@ -68,18 +68,12 @@ impl Impact {
                 // full blocks -> SIMDBP
                 compress::BLOCK_LEN => {
                     Compressor::compress_sorted_full(initial, chunk, &mut compressed[..])
-                    // let num_block_bits = bitpacker.num_bits_sorted(initial, chunk);
-                    // output.write_u8(num_block_bits).unwrap();
-                    // bitpacker.compress_sorted(initial, &chunk, &mut compressed[..], num_block_bits)
                 }
                 // non-full block -> streamvbyte
-                _ => {
-                    Compressor::compress_sorted(initial, chunk, &mut compressed[..])
-                    //streamvbyte::encode_delta_to_buf(&chunk, &mut compressed[..], initial).unwrap()
-                }
+                _ => Compressor::compress_sorted(initial, chunk, &mut compressed[..]),
             };
             output.extend_from_slice(&compressed[..compressed_len]);
-            initial = *chunk.last().unwrap();
+            initial = *chunk.last().expect("chunk is non-empty");
         });
         (
             MetaData {
@@ -153,6 +147,7 @@ pub mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::unreadable_literal)]
     fn recover_small() {
         let org_impact = 123;
         let docs: Vec<u32> = vec![

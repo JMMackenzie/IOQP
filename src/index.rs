@@ -1,8 +1,9 @@
-use rayon::iter::ParallelBridge;
+use rayon::iter::IntoParallelIterator;
 use std::collections::BTreeMap;
 use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::convert::TryFrom;
 use std::hash::BuildHasherDefault;
 use twox_hash::XxHash64;
 
@@ -41,6 +42,8 @@ pub struct Index<C: crate::compress::Compressor> {
 impl<Compressor: crate::compress::Compressor> Index<Compressor> {
     /// Creates index from ciff file, quantziing it first
     ///
+    /// # Panics
+    /// Panics if doc data does not match plist data
     /// # Errors
     /// - Can't open ciff file
     pub fn from_ciff_file<P: AsRef<std::path::Path> + std::fmt::Debug>(
@@ -68,60 +71,26 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         }
         let num_docs = doclen.len() as u32;
 
-        // (2) Iterate the ciff data and score stuff
-        let pb_score = util::progress_bar("score postings", num_plists);
-        let max_score = ciff_reader
-            .plist_iter()
-            .par_bridge()
-            .progress_with(pb_score)
-            .map(|plist| {
-                let list_len = plist.postings.len() as u32;
-                let mut max_score: f32 = 0.0;
-                for ciff::Posting { docid, tf } in plist.postings.iter() {
-                    let score = scorer.score(
-                        *tf as u32,
-                        list_len,
-                        doclen[*docid as usize] as f32,
-                        num_docs,
-                    );
-                    max_score = max_score.max(score);
-                }
-                num_postings.fetch_add(plist.postings.len(), std::sync::atomic::Ordering::Relaxed);
-                ordered_float::OrderedFloat(max_score)
-            })
-            .max()
-            .expect("max_score")
-            .into_inner();
+        // (2) Iterate the ciff data and score stuff to determine max score
+        let max_score = determine_max_score(
+            num_plists,
+            &ciff_reader,
+            scorer,
+            &doclen,
+            num_docs,
+            &num_postings,
+        );
 
         // (3) We now have the index-wide max_score. we score again and quantize
-        let quantizer = score::LinearQuantizer::new(max_score, quant_bits);
-        let pb_quantizer = util::progress_bar("quantize/encode postings", num_plists);
-        let encoded_data: Vec<_> = ciff_reader
-            .plist_iter()
-            .par_bridge()
-            .progress_with(pb_quantizer)
-            .map(|plist| {
-                let mut posting_map: BTreeMap<Reverse<u16>, Vec<u32>> = BTreeMap::new();
-                let list_len = plist.postings.len() as u32;
-                for ciff::Posting { docid, tf } in plist.postings.iter() {
-                    let freq = scorer.score(
-                        *tf as u32,
-                        list_len,
-                        doclen[*docid as usize] as f32,
-                        num_docs,
-                    );
-                    let impact = quantizer.quantize(freq) as u16;
-                    let entry = posting_map.entry(Reverse(impact)).or_default();
-                    entry.push(*docid as u32);
-                }
-                let final_postings: Vec<(u16, Vec<u32>)> = posting_map
-                    .into_iter()
-                    .map(|(impact, docs)| (impact.0, docs))
-                    .collect();
-                let encoded_data = list::List::encode::<Compressor>(&final_postings);
-                (plist.term, encoded_data)
-            })
-            .collect();
+        let encoded_data = Self::quantize_and_encode(
+            max_score,
+            quant_bits,
+            num_plists,
+            &ciff_reader,
+            scorer,
+            &doclen,
+            num_docs,
+        );
 
         let uniq_levels: HashSet<u16> = encoded_data
             .par_iter()
@@ -133,7 +102,8 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         }
 
         let pb_write = util::progress_bar("create index", encoded_data.len());
-        let mut vocab: HashMap<_, _, BuildHasherDefault<XxHash64>> = Default::default();
+        let mut vocab: HashMap<_, _, BuildHasherDefault<XxHash64>> =
+            std::collections::HashMap::default();
         let mut list_data =
             Vec::with_capacity(encoded_data.iter().map(|(_, (_, data))| data.len()).sum());
         for (term, (mut list, term_data)) in encoded_data.into_iter().progress_with(pb_write) {
@@ -164,6 +134,11 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         })
     }
 
+    /// Read IOQP index from file
+    ///
+    /// # Errors
+    /// - fails if file can't be created
+    /// - fails if index can't be serialized
     pub fn write_to_file<P: AsRef<std::path::Path> + std::fmt::Debug>(
         &self,
         output_file_name: P,
@@ -174,6 +149,11 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         Ok(())
     }
 
+    /// Read IOQP index from file
+    ///
+    /// # Errors
+    /// - fails if file does not exist
+    /// - fails if index can't be deserialized
     pub fn read_from_file<P: AsRef<std::path::Path> + std::fmt::Debug>(
         index_file_name: P,
     ) -> anyhow::Result<Self> {
@@ -234,7 +214,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                     )
                 }
                 None => {
-                    //println!("unknown query token '{}'", tok);
+                    println!("unknown query token '{}'", tok);
                     None
                 }
             })
@@ -408,4 +388,77 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         self.process_impact_segments(&mut search_buf, postings_budget);
         self.search_bufs.lock().push(search_buf);
     }
+
+    fn quantize_and_encode(
+        max_score: f32,
+        quant_bits: u32,
+        num_plists: usize,
+        ciff_reader: &ciff::Reader,
+        scorer: impl score::Scorer,
+        doclen: &[f64],
+        num_docs: u32,
+    ) -> Vec<(String, (list::List, Vec<u8>))> {
+        let quantizer = score::LinearQuantizer::new(max_score, quant_bits);
+        let pb_quantizer = util::progress_bar("quantize/encode postings", num_plists);
+        (0..num_plists)
+            .into_par_iter()
+            .progress_with(pb_quantizer)
+            .map(|idx| {
+                let plist = ciff_reader.postings_list(idx);
+                let mut posting_map: BTreeMap<Reverse<u16>, Vec<u32>> = BTreeMap::new();
+                let list_len = plist.postings.len() as u32;
+                for ciff::Posting { docid, tf } in &plist.postings {
+                    let freq = scorer.score(
+                        *tf as u32,
+                        list_len,
+                        doclen[*docid as usize] as f32,
+                        num_docs,
+                    );
+                    let impact =
+                        u16::try_from(quantizer.quantize(freq)).expect("impact < u16::max");
+                    let entry = posting_map.entry(Reverse(impact)).or_default();
+                    entry.push(*docid as u32);
+                }
+                let final_postings: Vec<(u16, Vec<u32>)> = posting_map
+                    .into_iter()
+                    .map(|(impact, docs)| (impact.0, docs))
+                    .collect();
+                let encoded_data = list::List::encode::<Compressor>(&final_postings);
+                (plist.term, encoded_data)
+            })
+            .collect()
+    }
+}
+
+fn determine_max_score(
+    num_plists: usize,
+    ciff_reader: &ciff::Reader,
+    scorer: impl score::Scorer,
+    doclen: &[f64],
+    num_docs: u32,
+    num_postings: &std::sync::Arc<std::sync::atomic::AtomicUsize>,
+) -> f32 {
+    let pb_score = util::progress_bar("score postings", num_plists);
+    (0..num_plists)
+        .into_par_iter()
+        .progress_with(pb_score)
+        .map(|idx| {
+            let plist = ciff_reader.postings_list(idx);
+            let list_len = plist.postings.len() as u32;
+            let mut max_score: f32 = 0.0;
+            for ciff::Posting { docid, tf } in &plist.postings {
+                let score = scorer.score(
+                    *tf as u32,
+                    list_len,
+                    doclen[*docid as usize] as f32,
+                    num_docs,
+                );
+                max_score = max_score.max(score);
+            }
+            num_postings.fetch_add(plist.postings.len(), std::sync::atomic::Ordering::Relaxed);
+            ordered_float::OrderedFloat(max_score)
+        })
+        .max()
+        .expect("max_score")
+        .into_inner()
 }
