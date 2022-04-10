@@ -61,8 +61,10 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let num_postings = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let mut docmap = Vec::new();
         let mut doclen = Vec::new();
+        let mut step = 1;
 
-        info!("(1) iterate the CIFF data and build the docmap");
+        info!("({}) iterate the CIFF data and build the docmap", step);
+        step += 1;
         let mut max_doc_id = 0;
         for doc_record in ciff_reader.doc_record_iter().progress_with(pb_docmap) {
             docmap.push(doc_record.collection_docid);
@@ -71,17 +73,31 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         }
         let num_docs = doclen.len() as u32;
 
-        info!("(2) iterate the CIFF data and score stuff to determine max score");
-        let max_score = determine_max_score(
-            num_plists,
-            &ciff_reader,
-            scorer,
-            &doclen,
-            num_docs,
-            &num_postings,
-        );
+        let max_score = if !scorer.needs_quantization() {
+            1.0
+        } else {
+            info!(
+                "({}) iterate the CIFF data and score stuff to determine max score",
+                step
+            );
+            step += 1;
+            let max_score = determine_max_score(
+                num_plists,
+                &ciff_reader,
+                scorer,
+                &doclen,
+                num_docs,
+                &num_postings,
+            );
+            info!("\tmax score => {}", max_score);
+            max_score
+        };
 
-        info!("(3) we now have the index-wide max_score. Iterate the CIFF data again score + quantize + encode");
+        info!(
+            "({}) Iterate the CIFF data again score + quantize + encode",
+            step
+        );
+        step += 1;
         let encoded_data = Self::quantize_and_encode(
             max_score,
             quant_bits,
@@ -92,7 +108,8 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             num_docs,
         );
 
-        info!("(4) determine uniq impact levels ");
+        info!("({}) determine uniq impact levels ", step);
+        step += 1;
         let pb_uniq_lvls = util::progress_bar("create index", encoded_data.len());
         let uniq_levels: HashSet<u16> = encoded_data
             .par_iter()
@@ -104,7 +121,8 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             anyhow::bail!("Document map length does not match the maximum document identifier. Is your CIFF file corrupt?");
         }
 
-        info!("(5) concatenate final index structure");
+        info!("({}) concatenate final index structure", step);
+        step += 1;
         let pb_write = util::progress_bar("create index", encoded_data.len());
         let mut vocab: HashMap<_, _, BuildHasherDefault<XxHash64>> =
             std::collections::HashMap::default();
@@ -116,7 +134,8 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             list_data.extend_from_slice(&term_data);
         }
 
-        info!("(6) instantiate search objects");
+        info!("({}) instantiate search objects", step);
+        step += 1;
         let num_levels = uniq_levels.len();
         let max_level = uniq_levels.into_iter().max().unwrap() as usize;
         let search_bufs = parking_lot::Mutex::new(
@@ -125,7 +144,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                 .collect(),
         );
 
-        info!("(7) create final index object");
+        info!("({}) create final index object", step);
         Ok(Index {
             docmap,
             vocab,
@@ -420,8 +439,11 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                         doclen[*docid as usize] as f32,
                         num_docs,
                     );
-                    let impact =
-                        u16::try_from(quantizer.quantize(freq)).expect("impact < u16::max");
+                    let impact = if scorer.needs_quantization() {
+                        u16::try_from(quantizer.quantize(freq)).expect("impact < u16::max")
+                    } else {
+                        freq as u16
+                    };
                     let entry = posting_map.entry(Reverse(impact)).or_default();
                     entry.push(*docid as u32);
                 }
