@@ -1,5 +1,8 @@
 use std::collections::BinaryHeap;
 
+pub const CHUNK_SIZE: usize = 128;
+pub const CHUNK_SHIFT: usize = CHUNK_SIZE.log2() as usize;
+
 use crate::{
     compress::{self},
     impact, ScoreType,
@@ -20,7 +23,7 @@ impl Scratch {
         Self {
             impacts: (0..=max_level * max_weight).map(|_| Vec::new()).collect(),
             accumulators: vec![0; max_doc_id as usize + 1],
-            chunk: vec![0; ((max_doc_id as usize + 1) >> 11) + 1],
+            chunk: vec![0; ((max_doc_id as usize + 1) >> CHUNK_SHIFT) + 1],
             large_decode_buf: [0; compress::LARGE_BLOCK_LEN],
             decode_buf: [0; compress::BLOCK_LEN],
             heap: BinaryHeap::with_capacity(10000),

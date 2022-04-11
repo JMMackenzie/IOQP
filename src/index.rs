@@ -261,7 +261,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             {
                 for doc_id in chunk {
                     let doc_id = *doc_id as usize;
-                    let chunk_id = doc_id >> 11;
+                    let chunk_id = doc_id >> search::CHUNK_SHIFT;
                     data.accumulators[doc_id] += impact as ScoreType;
                     data.chunk[chunk_id] = data.chunk[chunk_id].max(data.accumulators[doc_id]);
                     // let entry = self.accumulators.entry(*doc_id).or_insert(0);
@@ -273,7 +273,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             {
                 for doc_id in chunk {
                     let doc_id = *doc_id as usize;
-                    let chunk_id = doc_id >> 11;
+                    let chunk_id = doc_id >> search::CHUNK_SHIFT;
                     data.accumulators[doc_id] += impact as ScoreType;
                     data.chunk[chunk_id] = data.chunk[chunk_id].max(data.accumulators[doc_id]);
                     // let entry = self.accumulators.entry(*doc_id).or_insert(0);
@@ -313,7 +313,6 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
     }
 
     fn determine_topk_chunks(&self, data: &mut search::Scratch, k: usize) -> Vec<search::Result> {
-        const CHUNK_SIZE: u32 = 2048;
         let heap = &mut data.heap;
         let accumulators = &data.accumulators;
         let chunks = &data.chunk;
@@ -334,7 +333,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
 
         chunks
             .iter()
-            .zip(accumulators.chunks(CHUNK_SIZE as usize))
+            .zip(accumulators.chunks(search::CHUNK_SIZE as usize))
             .for_each(|(&chunk_max, scores)| {
                 let threshold = heap.peek().unwrap().score;
                 if chunk_max > threshold {
@@ -350,7 +349,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                         doc_id += 1;
                     }
                 } else {
-                    doc_id += CHUNK_SIZE;
+                    doc_id += search::CHUNK_SIZE;
                 }
             });
         // only alloc happens here

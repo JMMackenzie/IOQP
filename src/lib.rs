@@ -1,5 +1,6 @@
 #![warn(missing_debug_implementations, rust_2018_idioms)]
 #![feature(stdsimd)]
+#![feature(int_log)]
 
 //mod ciff;
 pub mod ciff;
