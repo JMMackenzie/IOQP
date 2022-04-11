@@ -10,6 +10,7 @@ pub struct Scratch {
     pub impacts: Vec<Vec<impact::Impact>>,
     pub large_decode_buf: compress::LargeBuffer,
     pub decode_buf: compress::Buffer,
+    pub chunk: Vec<ScoreType>,
     pub accumulators: Vec<ScoreType>,
     pub heap: BinaryHeap<Result>,
 }
@@ -19,6 +20,7 @@ impl Scratch {
         Self {
             impacts: (0..=max_level * max_weight).map(|_| Vec::new()).collect(),
             accumulators: vec![0; max_doc_id as usize + 1],
+            chunk: vec![0; ((max_doc_id as usize + 1) >> 11) + 1],
             large_decode_buf: [0; compress::LARGE_BLOCK_LEN],
             decode_buf: [0; compress::BLOCK_LEN],
             heap: BinaryHeap::with_capacity(10000),
