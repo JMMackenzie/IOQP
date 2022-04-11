@@ -1,4 +1,5 @@
 use structopt::StructOpt;
+use tracing::info;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "create", about = "create ioqp indexes")]
@@ -24,12 +25,39 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
     let args = Args::from_args();
+    info!("args = {:?}", &args);
 
+    info!("create ioqp index from {}", args.input.display());
+    let start = std::time::Instant::now();
     let index = if args.quantize {
-        ioqp::Index::<ioqp::SimdBPandStreamVbyte>::quantize_from_ciff_file(args.input, args.quant_bits, args.bm25_k1, args.bm25_b)
+        let scorer = ioqp::score::BM25::new(args.bm25_k1, args.bm25_b);
+        ioqp::Index::<ioqp::SimdBPandStreamVbyte>::from_ciff_file(
+            args.input,
+            args.quant_bits,
+            scorer,
+        )
     } else {
-         ioqp::Index::<ioqp::SimdBPandStreamVbyte>::from_ciff_file(args.input)
+        let scorer = ioqp::score::Identity::new();
+        ioqp::Index::<ioqp::SimdBPandStreamVbyte>::from_ciff_file(
+            args.input,
+            args.quant_bits,
+            scorer,
+        )
     }?;
-    index.write_to_file(args.output)
+    info!(
+        "index creation time: {:.2} secs",
+        start.elapsed().as_secs_f64()
+    );
+
+    info!("write index to file {}", args.output.display());
+    let start = std::time::Instant::now();
+    index.write_to_file(args.output)?;
+    info!(
+        "index write time: {:.2} secs",
+        start.elapsed().as_secs_f64()
+    );
+
+    Ok(())
 }

@@ -80,7 +80,7 @@ fn main() -> anyhow::Result<()> {
         uniq_tokens.dedup();
         let pb = ioqp::util::progress_bar("warmup", uniq_tokens.len());
         for t in uniq_tokens.iter().progress_with(pb) {
-            index.query_warmup(std::slice::from_ref(&t));
+            index.query_warmup(std::slice::from_ref(t));
         }
     }
     let mut hist = Vec::with_capacity(num_queries);

@@ -31,7 +31,7 @@ impl List {
 
 #[cfg(test)]
 mod tests {
-    use crate::range::ByteRange;
+    use crate::range::Byte;
 
     use super::*;
 
@@ -105,7 +105,7 @@ mod tests {
                 let stop = cur_offset + meta_data.bytes as usize;
                 let mut decode_buf = [0u32; crate::compress::BLOCK_LEN];
                 let mut recovered =
-                    impact::Impact::from_encoded_slice(meta_data, ByteRange::new(cur_offset, stop));
+                    impact::Impact::from_encoded_slice(meta_data, Byte::new(cur_offset, stop));
                 let mut doc_iter = docs.into_iter();
                 while let Some(chunk) = recovered
                     .next_chunk::<crate::compress::SimdBPandStreamVbyte>(

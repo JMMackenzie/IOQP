@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package ciff;
+
 // An index stored in CIFF is a single file comprised of exactly the following:
 //  - A Header protobuf message,
 //  - Exactly the number of PostingsList messages specified in the num_postings_lists field of the Header

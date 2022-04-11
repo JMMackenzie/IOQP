@@ -15,7 +15,7 @@ fn decode_list(
     large_decode_buf: &mut [u32; ioqp::compress::LARGE_BLOCK_LEN],
     decode_buf: &mut [u32; ioqp::compress::BLOCK_LEN],
 ) -> u64 {
-    let mut impact = Impact::from_encoded_slice(meta_data, ioqp::ByteRange::from_slice(data));
+    let mut impact = Impact::from_encoded_slice(meta_data, ioqp::Byte::from_slice(data));
     let mut sum: u64 = 0;
     while let Some(chunk) = impact.next_large_chunk::<Compressor>(data, large_decode_buf) {
         for doc_id in chunk {
