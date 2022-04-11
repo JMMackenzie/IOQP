@@ -432,11 +432,13 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                 let plist = ciff_reader.postings_list(idx);
                 let mut posting_map: BTreeMap<Reverse<u16>, Vec<u32>> = BTreeMap::new();
                 let list_len = plist.postings.len() as u32;
+                let mut doc_id: u32 = 0;
                 for ciff::Posting { docid, tf } in &plist.postings {
+                    doc_id += *docid as u32;
                     let freq = scorer.score(
                         *tf as u32,
                         list_len,
-                        doclen[*docid as usize] as f32,
+                        doclen[doc_id as usize] as f32,
                         num_docs,
                     );
                     let impact = if scorer.needs_quantization() {
@@ -445,7 +447,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                         freq as u16
                     };
                     let entry = posting_map.entry(Reverse(impact)).or_default();
-                    entry.push(*docid as u32);
+                    entry.push(doc_id);
                 }
                 let final_postings: Vec<(u16, Vec<u32>)> = posting_map
                     .into_iter()
@@ -474,11 +476,13 @@ fn determine_max_score(
             let plist = ciff_reader.postings_list(idx);
             let list_len = plist.postings.len() as u32;
             let mut max_score: f32 = 0.0;
+            let mut doc_id: u32 = 0;
             for ciff::Posting { docid, tf } in &plist.postings {
+                doc_id += *docid as u32;
                 let score = scorer.score(
                     *tf as u32,
                     list_len,
-                    doclen[*docid as usize] as f32,
+                    doclen[doc_id as usize] as f32,
                     num_docs,
                 );
                 max_score = max_score.max(score);
