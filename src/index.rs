@@ -247,7 +247,10 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
     }
 
     fn process_impact_segments(&self, data: &mut search::Scratch, mut postings_budget: i64) {
-        data.accumulators.iter_mut().for_each(|x| *x = 0);
+        let accumulators = &mut data.accumulators;
+        let chunks = &mut data.chunk;
+        accumulators.iter_mut().for_each(|x| *x = 0);
+        chunks.iter_mut().for_each(|x| *x = 0);
         let impact_iter = data.impacts.iter_mut().rev().flat_map(|i| i.iter_mut());
         for impact_group in impact_iter {
             if postings_budget < 0 {
@@ -258,60 +261,37 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             while let Some(chunk) = impact_group
                 .next_large_chunk::<Compressor>(&self.list_data, &mut data.large_decode_buf)
             {
-                for doc_id in chunk {
-                    data.accumulators[*doc_id as usize] += impact as ScoreType;
-                    // let entry = self.accumulators.entry(*doc_id).or_insert(0);
-                    // *entry += impact;
-                }
+                chunk.iter().cloned().for_each(|doc_id| {
+                    let doc_id = doc_id as usize;
+                    let chunk_id = doc_id >> search::CHUNK_SHIFT;
+                    let accum = unsafe { accumulators.get_unchecked_mut(doc_id) };
+                    *accum += impact as ScoreType;
+                    let chnk = unsafe { chunks.get_unchecked_mut(chunk_id) };
+                    *chnk = (*chnk).max(*accum);
+                });
             }
             while let Some(chunk) =
                 impact_group.next_chunk::<Compressor>(&self.list_data, &mut data.decode_buf)
             {
-                for doc_id in chunk {
-                    data.accumulators[*doc_id as usize] += impact as ScoreType;
-                    // let entry = self.accumulators.entry(*doc_id).or_insert(0);
-                    // *entry += impact;
-                }
+                chunk.iter().cloned().for_each(|doc_id| {
+                    let doc_id = doc_id as usize;
+                    let chunk_id = doc_id >> search::CHUNK_SHIFT;
+                    let accum = unsafe { accumulators.get_unchecked_mut(doc_id) };
+                    *accum += impact as ScoreType;
+                    let chnk = unsafe { chunks.get_unchecked_mut(chunk_id) };
+                    *chnk = (*chnk).max(*accum);
+                });
             }
             postings_budget -= num_postings;
         }
     }
 
-    fn determine_topk(&self, data: &mut search::Scratch, k: usize) -> Vec<search::Result> {
-        let mut heap = BinaryHeap::with_capacity(k + 1);
-        let block_offset = k;
-        data.accumulators[..k]
-            .iter()
-            .enumerate()
-            .for_each(|(doc_id, score)| {
-                heap.push(search::Result {
-                    doc_id: doc_id as u32,
-                    score: *score,
-                });
-            });
-        data.accumulators[k..]
-            .iter()
-            .enumerate()
-            .for_each(|(doc_id, &score)| {
-                let top = heap.peek().unwrap();
-                if top.score < score {
-                    heap.push(search::Result {
-                        doc_id: (doc_id + block_offset) as u32,
-                        score,
-                    });
-                    heap.pop();
-                }
-            });
-        heap.into_sorted_vec()
-    }
-
     fn determine_topk_chunks(&self, data: &mut search::Scratch, k: usize) -> Vec<search::Result> {
-        const CHUNK_SIZE: u32 = 2048;
         let heap = &mut data.heap;
-        let accumulators = &mut data.accumulators;
-
+        let accumulators = &data.accumulators;
+        let chunks = &data.chunk;
         heap.clear();
-        let block_offset = k;
+
         accumulators[..k]
             .iter()
             .enumerate()
@@ -322,31 +302,30 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                 });
             });
 
+        let mut threshold = heap.peek().unwrap().score;
         let mut doc_id = 0;
-        accumulators[k..]
-            .chunks(CHUNK_SIZE as usize)
-            .for_each(|scores| {
-                let threshold = heap.peek().unwrap().score;
-                let max_or_thres = crate::util::determine_max(scores, threshold);
-                if max_or_thres > threshold {
-                    for &score in scores.iter() {
-                        let top = heap.peek().unwrap();
-                        if top.score < score {
+        chunks
+            .iter()
+            .zip(accumulators.chunks(search::CHUNK_SIZE as usize))
+            .for_each(|(&chunk_max, scores)| {
+                if chunk_max > threshold {
+                    scores.iter().for_each(|&score| {
+                        if threshold < score {
                             heap.push(search::Result {
-                                doc_id: (doc_id + block_offset as u32),
+                                doc_id: doc_id as u32,
                                 score,
                             });
                             heap.pop();
+                            threshold = heap.peek().unwrap().score;
                         }
                         doc_id += 1;
-                    }
+                    });
                 } else {
-                    doc_id += CHUNK_SIZE;
+                    doc_id += search::CHUNK_SIZE;
                 }
             });
-
         // only alloc happens here
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(heap.len());
         while let Some(elem) = heap.pop() {
             result.push(elem);
         }
@@ -369,7 +348,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let total_postings = self.determine_impact_segments(&mut search_buf, tokens);
         let postings_budget = (total_postings as f32 * rho).ceil() as i64;
         self.process_impact_segments(&mut search_buf, postings_budget);
-        let topk = self.determine_topk(&mut search_buf, k);
+        let topk = self.determine_topk_chunks(&mut search_buf, k);
 
         self.search_bufs.lock().push(search_buf);
         search::Results {

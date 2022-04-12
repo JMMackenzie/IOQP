@@ -38,8 +38,8 @@ impl Compressor for SimdBPandStreamVbyte {
         let bitpacker = SimdbpCompressor::new();
         let num_bits = unsafe { *input.get_unchecked(0) };
         let compressed_len = (num_bits as usize * BLOCK_LEN) >> 3;
-        let bytes =
-            bitpacker.decompress_sorted(initial, &input[1..=compressed_len], output, num_bits);
+        let compressed = unsafe { input.get_unchecked(1..=compressed_len) };
+        let bytes = bitpacker.decompress_sorted(initial, compressed, output, num_bits);
         bytes + 1
     }
     fn decompress_sorted(initial: u32, input: &[u8], output: &mut [u32]) -> usize {
