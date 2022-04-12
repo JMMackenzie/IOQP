@@ -107,7 +107,9 @@ pub fn read_queries<P: AsRef<std::path::Path> + std::fmt::Debug>(
         .lines()
         .filter_map(std::result::Result::ok)
         .filter_map(|l| l.parse::<Query>().ok())
+        .filter(|q| q.tokens.len() > 0) // throws away any 0-length queries
         .collect();
+
 
     //  Re-scale to max range or 1
     for query in &mut queries {
