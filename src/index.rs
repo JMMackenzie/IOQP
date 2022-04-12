@@ -247,8 +247,10 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
     }
 
     fn process_impact_segments(&self, data: &mut search::Scratch, mut postings_budget: i64) {
-        data.accumulators.iter_mut().for_each(|x| *x = 0);
-        data.chunk.iter_mut().for_each(|x| *x = 0);
+        let accumulators = &mut data.accumulators;
+        let chunks = &mut data.chunk;
+        accumulators.iter_mut().for_each(|x| *x = 0);
+        chunks.iter_mut().for_each(|x| *x = 0);
         let impact_iter = data.impacts.iter_mut().rev().flat_map(|i| i.iter_mut());
         for impact_group in impact_iter {
             if postings_budget < 0 {
@@ -259,22 +261,26 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
             while let Some(chunk) = impact_group
                 .next_large_chunk::<Compressor>(&self.list_data, &mut data.large_decode_buf)
             {
-                for doc_id in chunk {
-                    let doc_id = *doc_id as usize;
+                chunk.iter().cloned().for_each(|doc_id| {
+                    let doc_id = doc_id as usize;
                     let chunk_id = doc_id >> search::CHUNK_SHIFT;
-                    data.accumulators[doc_id] += impact as ScoreType;
-                    data.chunk[chunk_id] = data.chunk[chunk_id].max(data.accumulators[doc_id]);
-                }
+                    let accum = unsafe { accumulators.get_unchecked_mut(doc_id) };
+                    *accum += impact as ScoreType;
+                    let chnk = unsafe { chunks.get_unchecked_mut(chunk_id) };
+                    *chnk = (*chnk).max(*accum);
+                });
             }
             while let Some(chunk) =
                 impact_group.next_chunk::<Compressor>(&self.list_data, &mut data.decode_buf)
             {
-                for doc_id in chunk {
-                    let doc_id = *doc_id as usize;
+                chunk.iter().cloned().for_each(|doc_id| {
+                    let doc_id = doc_id as usize;
                     let chunk_id = doc_id >> search::CHUNK_SHIFT;
-                    data.accumulators[doc_id] += impact as ScoreType;
-                    data.chunk[chunk_id] = data.chunk[chunk_id].max(data.accumulators[doc_id]);
-                }
+                    let accum = unsafe { accumulators.get_unchecked_mut(doc_id) };
+                    *accum += impact as ScoreType;
+                    let chnk = unsafe { chunks.get_unchecked_mut(chunk_id) };
+                    *chnk = (*chnk).max(*accum);
+                });
             }
             postings_budget -= num_postings;
         }
