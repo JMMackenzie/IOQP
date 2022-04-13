@@ -18,7 +18,7 @@ You can download all of the data:
 
 Or just bits and pieces:
 
-`wget "https://cloudstor.aarnet.edu.au/plus/s/AYX0o3PB0fXtQ7p/download?path=gov2/queries" -O gov2-queries
+`wget "https://cloudstor.aarnet.edu.au/plus/s/AYX0o3PB0fXtQ7p/download?path=gov2/queries" -O gov2-queries`
 
 ## Requrirements
 
