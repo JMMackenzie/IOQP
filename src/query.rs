@@ -135,7 +135,7 @@ pub mod tests {
     use super::*;
 
     #[test]
-    fn parse_mutli_colon() {
+    fn parse_multi_colon() {
         let query = "111:this has no colon";
         let expected = Query {id: 111, tokens: vec![
             Term {token: "this".to_string(), freq: 1},
