@@ -35,16 +35,22 @@ impl PartialOrd for Term {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(Eq, serde::Serialize, serde::Deserialize, Debug)]
 pub struct Query {
     pub id: usize,
     pub tokens: Vec<Term>,
 }
 
+impl PartialEq for Query {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.tokens == other.tokens
+    }
+}
+
 impl std::str::FromStr for Query {
     type Err = std::num::ParseIntError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.split(':').collect();
+        let parts: Vec<&str> = s.splitn(2, ":").collect();
         let id = parts[0].parse::<usize>()?;
         let terms: Vec<String> = parts[1].split_whitespace().map(ToOwned::to_owned).collect();
         let mut token_freqs: HashMap<String, u32> = HashMap::new();
@@ -55,6 +61,7 @@ impl std::str::FromStr for Query {
         for (token, freq) in token_freqs {
             tokens.push(Term { token, freq });
         }
+        tokens.sort();
         Ok(Query { id, tokens })
     }
 }
@@ -121,4 +128,41 @@ pub fn read_queries<P: AsRef<std::path::Path> + std::fmt::Debug>(
     }
 
     Ok(queries)
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_mutli_colon() {
+        let query = "111:this has no colon";
+        let expected = Query {id: 111, tokens: vec![
+            Term {token: "this".to_string(), freq: 1},
+            Term {token: "no".to_string(), freq: 1},
+            Term {token: "has".to_string(), freq: 1},
+            Term {token: "colon".to_string(), freq: 1},
+        ]};
+        assert_eq!(expected, query.parse::<Query>().unwrap());
+
+        let query = "112:this has : one colon";
+        let expected = Query {id: 112, tokens: vec![
+            Term {token: "this".to_string(), freq: 1},
+            Term {token: "one".to_string(), freq: 1},
+            Term {token: "has".to_string(), freq: 1},
+            Term {token: "colon".to_string(), freq: 1},
+            Term {token: ":".to_string(), freq: 1},
+        ]};
+        assert_eq!(expected, query.parse::<Query>().unwrap());
+
+        let query = "113:this has : : : many : : : colons";
+        let expected = Query {id: 113, tokens: vec![
+            Term {token: "this".to_string(), freq: 1},
+            Term {token: "many".to_string(), freq: 1},
+            Term {token: "has".to_string(), freq: 1},
+            Term {token: "colons".to_string(), freq: 1},
+            Term {token: ":".to_string(), freq: 6},
+        ]};
+        assert_eq!(expected, query.parse::<Query>().unwrap());
+    }
 }
