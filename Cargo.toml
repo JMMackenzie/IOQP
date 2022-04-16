@@ -22,7 +22,7 @@ structopt = "0.3.21"
 tracing = "0.1.26"
 tracing-appender = "0.2.2"
 axum = { version = "0.5" }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1.17.0", features = ["full"] }
 tower = { version = "0.4", features = ["util"] }
 serde_json = "1.0.79"
 parking_lot = "0.12.0"
@@ -32,6 +32,10 @@ bytes = "1.1"
 prost = "0.10"
 memmap2 = "0.5.3"
 tracing-subscriber = "0.3"
+url = "2.2.2"
+reqwest = { version = "0.11.10", features = ["json"] }
+governor = "0.4.2"
+futures = { version = "0.3.21" }
 
 [build-dependencies]
 prost-build = "0.10"

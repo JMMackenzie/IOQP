@@ -8,6 +8,7 @@ use axum::{
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use structopt::StructOpt;
+use tracing::info;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "query", about = "serve ioqp indexes")]
@@ -16,7 +17,7 @@ struct Args {
     #[structopt(short, long, parse(from_os_str))]
     index: std::path::PathBuf,
     /// Port to bind
-    #[structopt(long)]
+    #[structopt(long, default_value = "3000")]
     port: u16,
 }
 
@@ -55,8 +56,11 @@ type IndexType = ioqp::Index<ioqp::SimdBPandStreamVbyte>;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
     let args = Args::from_args();
+    info!("args = {:?}", &args);
 
+    info!("loading index from file {}", args.index.display());
     let index = IndexType::read_from_file(args.index)?;
     let index = Arc::new(index);
     let app = Router::new()
@@ -76,6 +80,7 @@ async fn main() -> anyhow::Result<()> {
         );
 
     let addr = format!("0.0.0.0:{}", args.port).parse()?;
+    info!("start http endpoint at {}", &addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await?;
