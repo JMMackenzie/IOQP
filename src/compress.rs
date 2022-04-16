@@ -8,7 +8,7 @@ type SimdbpCompressor = bitpacking::BitPacker8x;
 
 pub const BLOCK_LEN: usize = SimdbpCompressor::BLOCK_LEN;
 pub const BLOCK_LEN_M1: usize = BLOCK_LEN - 1;
-pub const LARGE_BLOCK_LEN: usize = 4 * BLOCK_LEN;
+pub const LARGE_BLOCK_LEN: usize = 64 * BLOCK_LEN;
 
 pub type LargeBuffer = [u32; LARGE_BLOCK_LEN];
 pub type Buffer = [u32; BLOCK_LEN];
