@@ -107,7 +107,7 @@ async fn main() -> anyhow::Result<()> {
     let mut max_tps: f64 = 0.0;
     let mut step = 100;
     while step > 1 {
-        info!("waiting for 5 secs...", cur_tps);
+        info!("waiting for 5 secs...");
         tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
         info!("running with tps: {}", cur_tps);
         let queries = qrys.iter().cycle();
