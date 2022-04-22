@@ -35,6 +35,22 @@ ioqp_qry() {
     sed -i '/^unknown/d' $6
 }
 
+ioqp_weighted_qry() {
+    $NUMACTL $QUERY \
+        -i $1 \
+        -q $2 \
+        -o $3 \
+        -k $4 \
+        -m $5 \
+        --warmup \
+        --weighted \
+        > $6
+    # drop unknown query terms from output
+    sed -i '/^unknown/d' $6
+}
+
+
+
 # msmarco
 for K in 10 100 1000; do
 for MODE in fixed-10 fixed-100 fixed-1000 fixed-$MARCO_D_10_PERCENT fraction-1; do
@@ -77,7 +93,7 @@ RUN=$D/msmarco/runs/${NAME}.run
 LOG=$D/log/${NAME}.log
 INDEX=$D/msmarco/indexes/bp-spladev2.ioqp.idx
 QRYSET=$D/msmarco/queries/spladev2.dev.query
-ioqp_qry $INDEX $QRYSET $RUN $K $MODE $LOG
+ioqp_weighted_qry $INDEX $QRYSET $RUN $K $MODE $LOG
 
 # msmarco, unicoil-tilde
 NAME=unicoil-tilde.k${K}.${MODE}
@@ -85,7 +101,7 @@ RUN=$D/msmarco/runs/${NAME}.run
 LOG=$D/log/${NAME}.log
 INDEX=$D/msmarco/indexes/bp-unicoil-tilde.ioqp.idx
 QRYSET=$D/msmarco/queries/unicoil-tilde.dev.query
-ioqp_qry $INDEX $QRYSET $RUN $K $MODE $LOG
+ioqp_weighted_qry $INDEX $QRYSET $RUN $K $MODE $LOG
 
 done
 done
