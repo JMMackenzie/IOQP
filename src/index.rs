@@ -292,6 +292,11 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
         let chunks = &data.chunk;
         heap.clear();
 
+        // Calculate how many chunks we need to look at to populate k docs into the heap
+        let init_heap_chunks = ((k as f32) / (search::CHUNK_SIZE as f32)).ceil() as usize;
+        let init_heap_docs = search::CHUNK_SIZE * init_heap_chunks;
+
+        // Push the first k documents
         accumulators[..k]
             .iter()
             .enumerate()
@@ -302,11 +307,30 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                 });
             });
 
+
+        // Check the remaining init_heap_docs - k entries
         let mut threshold = heap.peek().unwrap().score;
-        let mut doc_id = 0;
+        accumulators[k..init_heap_docs]
+            .iter()
+            .enumerate()
+            .for_each(|(doc_id, score)| {
+                if threshold < *score {
+                    heap.push(search::Result {
+                        doc_id: (doc_id + k) as u32,
+                        score: *score,
+                    });
+                    heap.pop();
+                    threshold = heap.peek().unwrap().score;
+                }
+            });
+
+
+        let mut threshold = heap.peek().unwrap().score;
+        let mut doc_id = init_heap_docs;
         chunks
             .iter()
-            .zip(accumulators.chunks(search::CHUNK_SIZE as usize))
+            .skip(init_heap_chunks)
+            .zip(accumulators.chunks(search::CHUNK_SIZE as usize).skip(init_heap_chunks))
             .for_each(|(&chunk_max, scores)| {
                 if chunk_max > threshold {
                     scores.iter().for_each(|&score| {
