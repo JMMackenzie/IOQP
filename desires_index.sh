@@ -7,9 +7,7 @@ D=desires
 STEP1=$D/.step1_download
 STEP2=$D/.step2_extract
 STEP3=$D/.step3_index
-
 CREATE=./target/release/create
-QUERY=./target/release/query
 
 # download
 if [ ! -f "$STEP1" ]; then
@@ -79,56 +77,3 @@ if [ ! -f "$STEP3" ]; then
 
     touch $STEP3
 fi
-
-# run queries
-mkdir -p $D/{gov2,msmarco}/runs
-# msmarco
-$QUERY \
-    -i $D/msmarco/indexes/bp-deepct.8.ioqp.idx \
-    -q $D/msmarco/queries/deepct.dev.query \
-    -o $D/msmarco/runs/deepct.k10.fixed100.run \
-    -k 10 \
-    -m fixed-100
-$QUERY \
-    -i $D/msmarco/indexes/bp-deepimpact.ioqp.idx \
-    -q $D/msmarco/queries/deepimpact.query \
-    -o $D/msmarco/runs/deepimpact.k10.fixed100.run \
-    -k 10 \
-    -m fixed-100
-$QUERY \
-    -i $D/msmarco/indexes/bp-doct5query.8.ioqp.idx \
-    -q $D/msmarco/queries/doct5query.dev.query \
-    -o $D/msmarco/runs/doct5query.k10.fixed100.run \
-    -k 10 \
-    -m fixed-100
-$QUERY \
-    -i $D/msmarco/indexes/bp-original.8.ioqp.idx \
-    -q $D/msmarco/queries/original.dev.query \
-    -o $D/msmarco/runs/original.k10.fixed100.run \
-    -k 10 \
-    -m fixed-100
-$QUERY \
-    -i $D/msmarco/indexes/bp-spladev2.ioqp.idx \
-    -q $D/msmarco/queries/spladev2.dev.query \
-    -o $D/msmarco/runs/spladev2.k10.fixed100.run \
-    -k 10 \
-    -m fixed-100
-$QUERY \
-    -i $D/msmarco/indexes/bp-unicoil-tilde.ioqp.idx \
-    -q $D/msmarco/queries/unicoil-tilde.dev.query \
-    -o $D/msmarco/runs/unicoil-tilde.k10.fixed100.run \
-    -k 10 \
-    -m fixed-100
-# gov2
-$QUERY \
-    -i $D/gov2/indexes/bp-gov2.8.ioqp.idx \
-    -q $D/gov2/queries/gov2.queries \
-    -o $D/gov2/runs/gov2.k10.fixed100.run \
-    -k 10 \
-    -m fixed-100
-$QUERY \
-    -i $D/gov2/indexes/bp-gov2.8.ioqp.idx \
-    -q $D/gov2/queries/mqt.queries \
-    -o $D/gov2/runs/mqt.k10.fixed100.run \
-    -k 10 \
-    -m fixed-100
