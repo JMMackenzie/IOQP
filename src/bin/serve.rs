@@ -19,9 +19,9 @@ struct Args {
     /// Port to bind
     #[structopt(long, default_value = "3000")]
     port: u16,
-    /// Worker threads
-    #[structopt(long, default_value = "4")]
-    worker_threads: u16,
+    // /// Worker threads
+    // #[structopt(long, default_value = "4")]
+    // worker_threads: u16,
     /// Max blocking threads
     #[structopt(long, default_value = "8")]
     max_blocking_threads: u16,
@@ -94,7 +94,7 @@ fn main() -> anyhow::Result<()> {
     //     .await?;
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
-        .worker_threads(args.worker_threads.into())
+        // .worker_threads(args.worker_threads.into())
         .max_blocking_threads(args.max_blocking_threads.into())
         .build()
         .unwrap()
