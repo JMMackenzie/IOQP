@@ -19,6 +19,12 @@ struct Args {
     /// Port to bind
     #[structopt(long, default_value = "3000")]
     port: u16,
+    /// Worker threads
+    #[structopt(long, default_value = "4")]
+    worker_threads: u16,
+    /// Max blocking threads
+    #[structopt(long, default_value = "8")]
+    max_blocking_threads: u16,
 }
 
 #[derive(serde::Deserialize)]
@@ -54,8 +60,10 @@ impl IntoResponse for ServeError {
 }
 type IndexType = ioqp::Index<ioqp::SimdBPandStreamVbyte>;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+
+// #[tokio::main(flavor = "current_thread")]
+// async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let args = Args::from_args();
     info!("args = {:?}", &args);
@@ -81,9 +89,22 @@ async fn main() -> anyhow::Result<()> {
 
     let addr = format!("0.0.0.0:{}", args.port).parse()?;
     info!("start http endpoint at {}", &addr);
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await?;
+    // axum::Server::bind(&addr)
+    //     .serve(app.into_make_service())
+    //     .await?;
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .worker_threads(args.worker_threads.into())
+        .max_blocking_threads(args.max_blocking_threads.into())
+        .build()
+        .unwrap()
+        .block_on(async {
+            axum::Server::bind(&addr)
+                .serve(app.into_make_service())
+                .await
+                .map_err(axum::Error::new)?;
+            Result::<(), axum::Error>::Ok(())
+        })?;
 
     Ok(())
 }
