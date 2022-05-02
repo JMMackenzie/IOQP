@@ -69,14 +69,19 @@ async fn process_query(
     http_client: reqwest::Client,
     end_point: &url::Url,
     query: QueryPayLoad,
-) -> Result<ioqp::Results, reqwest::Error> {
-    http_client
+) -> Result<(std::time::Duration, ioqp::Results), reqwest::Error> {
+
+    let start = std::time::Instant::now();
+ 
+    let res = http_client
         .post(end_point.as_str())
         .json(&query)
         .send()
         .await?
         .json::<ioqp::Results>()
-        .await
+        .await?;
+
+    Ok((start.elapsed(), res)) 
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -120,6 +125,7 @@ async fn main() -> anyhow::Result<()> {
     let mut num_errors: usize = 0;
     let mut num_processed: usize = 0;
     let mut hist = Vec::new();
+    let mut user_hist = Vec::new();
     let limit = total_req_duration.as_secs() * args.tps.get() as u64;
     let pb = indicatif::ProgressBar::new(limit);
     pb.set_draw_delta(total_req_duration.as_secs() as u64 / 200);
@@ -132,10 +138,11 @@ async fn main() -> anyhow::Result<()> {
     let start = std::time::Instant::now();
     while let Some(qry_resp) = buffered_rate_limited_qrys.next().await {
         match qry_resp {
-            Ok(results) => {
+            Ok((user_time, results)) => {
                 if num_processed > 10000 {
                     // we ignore the first 10k for warmup
                     hist.push(results.took.as_micros());
+                    user_hist.push(user_time.as_micros());
                 }
             }
             Err(err) => {
@@ -159,6 +166,7 @@ async fn main() -> anyhow::Result<()> {
     hist.sort_unstable();
     let n = hist.len() as f32;
     let total_time = hist.iter().sum::<u128>();
+    info!("======= Server Time =======");
     info!("# of samples: {}", hist.len());
     info!("  50'th percntl.: {}µs", hist[(n * 0.5) as usize]);
     info!("  90'th percntl.: {}µs", hist[(n * 0.9) as usize]);
@@ -166,6 +174,19 @@ async fn main() -> anyhow::Result<()> {
     info!("99.9'th percntl.: {}µs", hist[(n * 0.999) as usize]);
     info!("            max.: {}µs", hist.last().unwrap());
     info!("       mean time: {:.1}µs", total_time as f32 / n);
+
+    user_hist.sort_unstable();
+    let n = user_hist.len() as f32;
+    let total_time = user_hist.iter().sum::<u128>();
+    info!("======= User Time =======");
+    info!("# of samples: {}", user_hist.len());
+    info!("  50'th percntl.: {}µs", user_hist[(n * 0.5) as usize]);
+    info!("  90'th percntl.: {}µs", user_hist[(n * 0.9) as usize]);
+    info!("  99'th percntl.: {}µs", user_hist[(n * 0.99) as usize]);
+    info!("99.9'th percntl.: {}µs", user_hist[(n * 0.999) as usize]);
+    info!("            max.: {}µs", user_hist.last().unwrap());
+    info!("       mean time: {:.1}µs", total_time as f32 / n);
+
 
     Ok(())
 }
