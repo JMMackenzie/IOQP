@@ -1,7 +1,7 @@
 use std::collections::BinaryHeap;
 
 pub const CHUNK_SIZE: usize = 128;
-pub const CHUNK_SHIFT: usize = CHUNK_SIZE.log2() as usize;
+pub const CHUNK_SHIFT: usize = CHUNK_SIZE.ilog2() as usize;
 
 use crate::{
     compress::{self},

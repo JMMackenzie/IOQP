@@ -2,17 +2,8 @@
 
 set -e
 
-# SPATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-D=desires
+D=data
 QUERY=./target/release/query
-
-NUMANODES=$(lscpu | grep '^NUMA node(s):' | awk '{print $3}')
-if ((NUMANODES > 1)); then
-    echo "warn: found $NUMANODES numa nodes"
-    echo 'warn: the numactl command can be specified via `NUMACTL` variable:'
-    echo 'warn:     NUMACTL="<numactl command>" ./desires_qry.sh'
-    echo
-fi
 
 # GOV2: 25,205,179
 # MSMARCO: 8,841,823
@@ -23,7 +14,7 @@ mkdir -p $D/log
 mkdir -p $D/{gov2,msmarco}/runs
 
 ioqp_qry() {
-    $NUMACTL $QUERY \
+    $QUERY \
         -i $1 \
         -q $2 \
         -o $3 \
@@ -36,7 +27,7 @@ ioqp_qry() {
 }
 
 ioqp_weighted_qry() {
-    $NUMACTL $QUERY \
+    $QUERY \
         -i $1 \
         -q $2 \
         -o $3 \
@@ -52,8 +43,8 @@ ioqp_weighted_qry() {
 
 
 # msmarco
-for K in 10 100 1000; do
-for MODE in fixed-10 fixed-100 fixed-1000 fixed-$MARCO_D_10_PERCENT fraction-1; do
+for K in 1000; do
+for MODE in fixed-$MARCO_D_10_PERCENT fraction-1; do
 
 # msmarco, deepct
 NAME=deepct.k${K}.${MODE}
@@ -108,8 +99,8 @@ done
 
 
 # gov2
-for K in 10 100 1000; do
-for MODE in fixed-10 fixed-100 fixed-1000 fixed-$GOV2_D_10_PERCENT fraction-1; do
+for K in 1000; do
+for fixed-$GOV2_D_10_PERCENT fraction-1; do
 
 # gov2, terabyte
 NAME=gov2-tbq.k${K}.${MODE}

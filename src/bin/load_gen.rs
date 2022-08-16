@@ -139,8 +139,8 @@ async fn main() -> anyhow::Result<()> {
     while let Some(qry_resp) = buffered_rate_limited_qrys.next().await {
         match qry_resp {
             Ok((user_time, results)) => {
-                if num_processed > 10000 {
-                    // we ignore the first 10k for warmup
+                if num_processed > 1000 {
+                    // we ignore the first 1k for warmup
                     hist.push(results.took.as_micros());
                     user_hist.push(user_time.as_micros());
                 }
