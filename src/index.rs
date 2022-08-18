@@ -239,7 +239,7 @@ impl<Compressor: crate::compress::Compressor> Index<Compressor> {
                     )
                 }
                 None => {
-                    println!("unknown query token '{}'", tok);
+                    tracing::warn!("unknown query token '{}'", tok);
                     None
                 }
             })

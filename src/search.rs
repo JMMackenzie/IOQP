@@ -1,7 +1,7 @@
 use std::collections::BinaryHeap;
 
 pub const CHUNK_SIZE: usize = 128;
-pub const CHUNK_SHIFT: usize = CHUNK_SIZE.log2() as usize;
+pub const CHUNK_SHIFT: usize = CHUNK_SIZE.ilog2() as usize;
 
 use crate::{
     compress::{self},
@@ -34,7 +34,7 @@ impl Scratch {
 use std::cmp::Ordering;
 use std::io::Write;
 
-#[derive(Eq, serde::Serialize, Debug)]
+#[derive(Eq, serde::Serialize, serde::Deserialize, Debug)]
 pub struct Result {
     pub doc_id: u32,
     pub score: crate::ScoreType,
@@ -58,7 +58,7 @@ impl PartialEq for Result {
     }
 }
 
-#[derive(serde::Serialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct Results {
     pub topk: Vec<Result>,
     pub took: std::time::Duration,
