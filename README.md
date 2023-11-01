@@ -18,6 +18,7 @@ work:
  author = {J. Mackenzie and M. Petri and L. Gallagher},
  booktitle = {Proc. DESIRES},
  year = {2022},
+ pages = {22--34},
 }
 ```
 
