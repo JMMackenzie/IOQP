@@ -36,6 +36,7 @@ url = "2.2.2"
 reqwest = { version = "0.11.10", features = ["json"] }
 governor = "0.4.2"
 futures = { version = "0.3.21" }
+flate2 = "1.0.24"
 
 [build-dependencies]
 # Note from v0.11 `protoc` is no longer bundled with prost
