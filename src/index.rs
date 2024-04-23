@@ -1,6 +1,5 @@
 use rayon::iter::IntoParallelIterator;
 use std::collections::BTreeMap;
-use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::convert::TryFrom;
