@@ -85,14 +85,8 @@ $ ./target/release/load_gen --k 1000 --mode fraction-1 --queries data/gov2/queri
 
 ## Data
 
-CIFF files and queries can be found on [AARNET CloudStor.](https://cloudstor.aarnet.edu.au/plus/s/AYX0o3PB0fXtQ7p)
-Use the `script/download-data.sh` script to fetch the data used in the paper, or you can download it manually:
-
-`wget "https://cloudstor.aarnet.edu.au/plus/s/AYX0o3PB0fXtQ7p/download" -O ioqp.zip`
-
-Or just bits and pieces:
-
-`wget "https://cloudstor.aarnet.edu.au/plus/s/AYX0o3PB0fXtQ7p/download?path=gov2/queries" -O gov2-queries`
+You will require a unique URL with a password to get the data due to the old data storage platform being decommissioned.
+Please create a github issue or contact Joel directly: joel.mackenzie@uq.edu.au
 
 ## Indexing
 
